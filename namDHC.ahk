@@ -20,7 +20,7 @@ SetControlDelay, -1
 			- Some spelling mistakes fixed
 			- Added some comments
 			- Minor GUI changes
- 
+
 */
 
 #Include SelectFolderEx.ahk
@@ -32,7 +32,7 @@ onExit("quitApp", 1)
 
 ; Default global values 
 ; --------------
-mainAppVersion := "1.01"
+mainAppVersion := "1.02"
 chdmanLocation := a_scriptDir "\chdman.exe"
 chdmanVerArray := ["0.236", "0.237", "0.238", "0.239", "0.240"]
 mainAppName := "namDHC"
@@ -87,19 +87,22 @@ killAllProcess()
 
 scannedFiles := {}, chdmanOpt := {}, queuedData := []
 GUI := { gVars:{}, dropdowns:{job:{}, media:{}}, buttons:{normal:[], hover:[], clicked:[], disabled:[]}, menu:{namesOrder:[], File:[], Settings:[], About:[]} }
-GUI.dropdowns["job"] := {create:"Create CHD files from media", extract:"Extract images from CHD files", info:"Get info from CHD files", verify:"Verify CHD files", addMeta:"Add metadata to CHD files", delMeta:"Delete metadata from CHD files"}
-GUI.dropdowns["media"] := {cd:"CD image", hd:"Hard disk image", ld:"LaserDisc image", raw:"Raw image"}
-GUI.buttons["default"] := {normal:[0, 0xFFCCCCCC, "", "", 3], 			hover:[0, 0xFFBBBBBB, "", 0xFF555555, 3], 	clicked:[0, 0xFFCFCFCF, "", 0xFFAAAAAA, 3], disabled:[0, 0xFFE0E0E0, "", 0xFFAAAAAA, 3] }
-GUI.buttons["cancel"]  := {normal:[0, 0xFFFC6D62, "", "White", 3], 		hover:[0, 0xFFff8e85, "", "White", 3], 		clicked:[0, 0xFFfad5d2, "", "White", 3], 	disabled:[0, 0xFFfad5d2, "", "White", 3]}
-GUI.buttons["start"]   := {normal:[0, 0xFF74b6cc, "", 0xFF444444, 3],	hover:[0, 0xFF84bed1, "", "White", 3], 		clicked:[0, 0xFFa5d6e6, "", "White", 3], 	disabled:[0, 0xFFd3dde0, "", 0xFF888888, 3] }	
+
+GUI.dropdowns["job"] :=		{create:"Create CHD files from media", extract:"Extract images from CHD files", info:"Get info from CHD files", verify:"Verify CHD files", addMeta:"Add metadata to CHD files", delMeta:"Delete metadata from CHD files"}
+GUI.dropdowns["media"] :=	{cd:"CD image", hd:"Hard disk image", ld:"LaserDisc image", raw:"Raw image"}
+GUI.buttons["default"] :=	{normal:[0, 0xFFCCCCCC, "", "", 3], 			hover:[0, 0xFFBBBBBB, "", 0xFF555555, 3], 	clicked:[0, 0xFFCFCFCF, "", 0xFFAAAAAA, 3], disabled:[0, 0xFFE0E0E0, "", 0xFFAAAAAA, 3] }
+GUI.buttons["cancel"]  :=	{normal:[0, 0xFFFC6D62, "", "White", 3], 		hover:[0, 0xFFff8e85, "", "White", 3], 		clicked:[0, 0xFFfad5d2, "", "White", 3], 	disabled:[0, 0xFFfad5d2, "", "White", 3]}
+GUI.buttons["start"]   :=	{normal:[0, 0xFF74b6cc, "", 0xFF444444, 3],	hover:[0, 0xFF84bed1, "", "White", 3], 		clicked:[0, 0xFFa5d6e6, "", "White", 3], 	disabled:[0, 0xFFd3dde0, "", 0xFF888888, 3] }	
+
 GUI.menu["namesOrder"] := ["File", "Settings", "About"]
-GUI.menu.File[1] := {name:"Quit", 													gotolabel:"quitApp", 					saveVar:""}
-GUI.menu.About[1] := {name:"About", 												gotolabel:"menuSelected", 				saveVar:""}
-GUI.menu.Settings[1] := {name:"Number of jobs to run concurrently", 				gotolabel:":SubSettingsConcurrently", 	saveVar:""}
-GUI.menu.Settings[2] := {name:"Show verbose window", 								gotolabel:"menuSelected", 				saveVar:"showVerboseWin", Fn:"showVerboseWindow"}
-GUI.menu.Settings[3] := {name:"Show a console for each job",						gotolabel:"menuSelected", 				saveVar:"showJobConsole"}
-GUI.menu.Settings[4] := {name:"Play sounds when finished job queue", 				gotolabel:"menuSelected", 				saveVar:"playFinishedSong"}
-GUI.menu.Settings[5] := {name:"Remove file entry from list when successful", 		gotolabel:"menuSelected", 				saveVar:"removeFileEntryAfterFinish"}
+GUI.menu.File[1] := 	{name:"Quit",											gotolabel:"quitApp",					saveVar:""}
+GUI.menu.About[1] := 	{name:"About",											gotolabel:"menuSelected",				saveVar:""}
+GUI.menu.Settings[1] := {name:"Number of jobs to run concurrently",				gotolabel:":SubSettingsConcurrently",	saveVar:""}
+GUI.menu.Settings[2] := {name:"Show verbose window",							gotolabel:"menuSelected",				saveVar:"showVerboseWin", Fn:"showVerboseWindow"}
+GUI.menu.Settings[3] := {name:"Show a console for each job",					gotolabel:"menuSelected",				saveVar:"showJobConsole"}
+GUI.menu.Settings[4] := {name:"Play sounds when finished job queue",			gotolabel:"menuSelected",				saveVar:"playFinishedSong"}
+GUI.menu.Settings[5] := {name:"Remove file entry from list when successful",	gotolabel:"menuSelected",				saveVar:"removeFileEntryAfterFinish"}
+
 GUI.gVars.guiDefaultFont := guiDefaultFont()
 GUI.gVars.templateHDDropdownList :=  ""											; Hard drive template dropdown list
 . "|Conner CFA170A  -  163MB||"
@@ -115,28 +118,29 @@ GUI.gVars.templateHDDropdownList :=  ""											; Hard drive template dropdown
 . "Maxtor LXT-340S  -  376MB|"
 . "Maxtor MXT-540SL  -  733MB|"
 . "Micropolis 1528  -  1272MB|"
-chdmanOpt.force := 				{name: "force", 			paramString: "f", 	description: "Force overwriting an existing output file"}
-chdmanOpt.verbose := 			{name: "verbose", 			paramString: "v", 	description: "Verbose output", 									hidden: true}
-chdmanOpt.outputBin := 			{name: "outputbin", 		paramString: "ob", 	description: "Output filename for binary data", 				editField: "filename.bin", useQuotes:true}
-chdmanOpt.inputParent := 		{name: "inputparent", 		paramString: "ip", 	description: "Input Parent", 									editField: "filename.ext", useQuotes:true}
-chdmanOpt.inputStartFrame := 	{name: "inputstartframe", 	paramString: "isf", description: "Input Start Frame", 								editField: 0}
-chdmanOpt.inputFrames := 		{name: "inputframes", 		paramString: "if", 	description: "Effective length of input in frames", 			editField: 0}
-chdmanOpt.inputStartByte := 	{name: "inputstartbyte", 	paramString: "isb", description: "Starting byte offset within the input", 			editField: 0}
-chdmanOpt.outputParent := 		{name: "outputparent",		paramString: "op", 	description: "Output parent file for CHD", 						editField: "filename.chd", useQuotes:true}
-chdmanOpt.hunkSize := 			{name: "hunksize", 			paramString: "hs", 	description: "Size of each hunk (in bytes)", 					editField: 19584}
-chdmanOpt.inputStartHunk := 	{name: "inputstarthunk",	paramString: "ish", description: "Starting hunk offset within the input", 			editField: 0}
-chdmanOpt.inputBytes := 		{name: "inputBytes",		paramString: "ib", 	description: "Effective length of input (in bytes)", 			editField: 0}
-chdmanOpt.compression := 		{name: "compression",		paramString: "c", 	description: "Compression codecs to use", 						editField: "cdlz,cdzl,cdfl"}
-chdmanOpt.inputHunks := 		{name: "inputhunks",		paramString: "ih", 	description: "Effective length of input (in hunks)", 			editField: 0}
-chdmanOpt.numProcessors := 		{name :"numprocessors",		paramString: "np", 	description: "Max number of CPU threads to use", 				dropdownOptions: procCountDDList()}
-chdmanOpt.template := 			{name: "template", 			paramString: "tp",	description: "Hard drive template to use", 						dropdownOptions: GUI.gVars.templateHDDropDownList, dropdownValues:[0,1,2,3,4,5,6,7,8,9,10,11,12]}
-chdmanOpt.chs := 				{name: "chs", 				paramString: "chs", description: "CHS Values [cyl, heads, sectors]", 				editField: "332,16,63"}
-chdmanOpt.ident := 				{name: "ident", 			paramString: "id", 	description: "Name of ident file for CHS info", 				editField: "filename.chs", useQuotes:true}
-chdmanOpt.size := 				{name: "size", 				paramString: "s", 	description: "Size of output file (in bytes)", 					editField: 0}
-chdmanOpt.unitSize := 			{name: "unitsize", 			paramString: "us", 	description: "Size of each unit (in bytes)", 					editField: 0}
-chdmanOpt.sectorSize := 		{name: "sectorsize", 		paramString: "ss", 	description: "Size of each hard disk sector (in bytes)", 		editField: 512}
-chdmanOpt.deleteInputFiles := 	{name: "deleteInputFiles", 						description: "Delete input files after completing job", 		masterOf:"deleteInputDir"}
-chdmanOpt.deleteInputDir := 	{name: "deleteInputDir", 						description: "Also delete input directory", 			xInset:10}
+
+chdmanOpt.force :=				{name: "force", 			paramString: "f", 	description: "Force overwriting an existing output file"}
+chdmanOpt.verbose :=			{name: "verbose", 			paramString: "v", 	description: "Verbose output", 									hidden: true}
+chdmanOpt.outputBin :=			{name: "outputbin", 		paramString: "ob", 	description: "Output filename for binary data", 				editField: "filename.bin", useQuotes:true}
+chdmanOpt.inputParent :=		{name: "inputparent", 		paramString: "ip", 	description: "Input Parent", 									editField: "filename.ext", useQuotes:true}
+chdmanOpt.inputStartFrame :=	{name: "inputstartframe", 	paramString: "isf", description: "Input Start Frame", 								editField: 0}
+chdmanOpt.inputFrames :=		{name: "inputframes", 		paramString: "if", 	description: "Effective length of input in frames", 			editField: 0}
+chdmanOpt.inputStartByte :=		{name: "inputstartbyte", 	paramString: "isb", description: "Starting byte offset within the input", 			editField: 0}
+chdmanOpt.outputParent :=		{name: "outputparent",		paramString: "op", 	description: "Output parent file for CHD", 						editField: "filename.chd", useQuotes:true}
+chdmanOpt.hunkSize :=			{name: "hunksize", 			paramString: "hs", 	description: "Size of each hunk (in bytes)", 					editField: 19584}
+chdmanOpt.inputStartHunk :=		{name: "inputstarthunk",	paramString: "ish", description: "Starting hunk offset within the input", 			editField: 0}
+chdmanOpt.inputBytes :=			{name: "inputBytes",		paramString: "ib", 	description: "Effective length of input (in bytes)", 			editField: 0}
+chdmanOpt.compression :=		{name: "compression",		paramString: "c", 	description: "Compression codecs to use", 						editField: "cdlz,cdzl,cdfl"}
+chdmanOpt.inputHunks :=			{name: "inputhunks",		paramString: "ih", 	description: "Effective length of input (in hunks)", 			editField: 0}
+chdmanOpt.numProcessors :=		{name :"numprocessors",		paramString: "np", 	description: "Max number of CPU threads to use", 				dropdownOptions: procCountDDList()}
+chdmanOpt.template :=			{name: "template", 			paramString: "tp",	description: "Hard drive template to use", 						dropdownOptions: GUI.gVars.templateHDDropDownList, dropdownValues:[0,1,2,3,4,5,6,7,8,9,10,11,12]}
+chdmanOpt.chs :=				{name: "chs", 				paramString: "chs", description: "CHS Values [cyl, heads, sectors]", 				editField: "332,16,63"}
+chdmanOpt.ident :=				{name: "ident", 			paramString: "id", 	description: "Name of ident file for CHS info", 				editField: "filename.chs", useQuotes:true}
+chdmanOpt.size :=				{name: "size", 				paramString: "s", 	description: "Size of output file (in bytes)", 					editField: 0}
+chdmanOpt.unitSize :=			{name: "unitsize", 			paramString: "us", 	description: "Size of each unit (in bytes)", 					editField: 0}
+chdmanOpt.sectorSize :=			{name: "sectorsize", 		paramString: "ss", 	description: "Size of each hard disk sector (in bytes)", 		editField: 512}
+chdmanOpt.deleteInputFiles :=	{name: "deleteInputFiles", 						description: "Delete input files after completing job", 		masterOf:"deleteInputDir"}
+chdmanOpt.deleteInputDir :=		{name: "deleteInputDir", 						description: "Also delete input directory", 			xInset:10}
 chdmanOpt.createSubDir :=		{name: "createSubDir",							description: "Create a new directory for each job"}
 chdmanOpt.keepIncomplete :=		{name: "keepIncomplete",						description: "Keep failed or cancelled output files"}
 ;chdmanOpt.input := 			{name: "input", 			paramString: "i", 	description: "Input filename", 									hidden: true}
@@ -1646,8 +1650,9 @@ removeFromArray(removeItem, byRef thisArray)
 }
 
 ; Get Windows current default font
+; by SKAN
 ; ------------------------
-guiDefaultFont() ; by SKAN
+guiDefaultFont() 
 { 
    varSetCapacity(LF, szLF := 28 + (A_IsUnicode ? 64 : 32), 0) ; LOGFONT structure
    if DllCall("GetObject", "Ptr", DllCall("GetStockObject", "Int", 17, "Ptr"), "Int", szLF, "Ptr", &LF)
