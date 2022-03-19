@@ -93,9 +93,9 @@ else if ( inStr(recvData.cmd, "copy") )
 else if ( inStr(recvData.cmd, "dumpmeta") )
 	suffx := "dumped metadata"
 
-sendData.log := "Successfuly " suffx " -  " recvData.workingTitle
-sendData.report := "`nSuccessfuly " suffx "`n"
-sendData.progressText := "Successfuly " suffx " -  " recvData.workingTitle
+sendData.log := "Successfully " suffx " -  " recvData.workingTitle
+sendData.report := "`nSuccessfully " suffx "`n"
+sendData.progressText := "Successfully " suffx " -  " recvData.workingTitle
 sendData.progress := 100
 thread_sendData()
 
@@ -183,7 +183,7 @@ thread_parseCHDMANOutput(data, lineNum, cPID)
 		
 		if ( !inArray(chdmanVer, chdmanVerArray) )  {
 			sendData.status := "halted"
-			sendData.log := "Error: Wrong CHDMAN version - " chdmanVer "`nSupported versions of CHDMAN are: " showArrayAsCommas(chdmanVerArray) "`nHalted."
+			sendData.log := "Error: Wrong CHDMAN version - " chdmanVer "`nSupported versions of CHDMAN are: " arrayToComma(chdmanVerArray) "`nHalted."
 			thread_log(sendData.log "`n")
 			thread_sendData()
 			exitApp

@@ -10,6 +10,19 @@ SetDefaultMouseSpeed, 0
 SetWinDelay, -1
 SetControlDelay, -1
 
+/*
+ v1.0		- Initial release
+
+ v1.01		- Added ISO input media support
+			- Minor fixes
+			
+ v1.02		- Removed superfluous code
+			- Some spelling mistakes fixed
+			- Added some comments
+			- Minor GUI changes
+ 
+*/
+
 #Include SelectFolderEx.ahk
 #Include ClassImageButton.ahk
 #Include ConsoleClass.ahk
@@ -19,12 +32,12 @@ onExit("quitApp", 1)
 
 ; Default global values 
 ; --------------
-mainAppVersion := "1.0"
+mainAppVersion := "1.01"
 chdmanLocation := a_scriptDir "\chdman.exe"
 chdmanVerArray := ["0.236", "0.237", "0.238", "0.239", "0.240"]
 mainAppName := "namDHC"
 mainAppNameVerbose := mainAppName " - Verbose"
-runAppName := mainAppName " - Job"
+runAppName := mainAppName " - Job"																																																			
 runAppNameChdman := runAppName " - chdman"
 runAppNameConsole := runAppName " - Console"
 jobTimeoutSec := 3
@@ -59,7 +72,7 @@ ini("read", ["jobQueueSize"
 			,"verboseWinPosY"])
 
 if ( !fileExist(chdmanLocation) ) {
-	msgbox 16, % "Fatal Error", % "CHDMAN.EXE not found!`n`nMake sure the chdman executable is located in the same directory as namDHC and try again.`n`nThe following chdman verions are supported:`n" showArrayAsCommas(chdmanVerArray)
+	msgbox 16, % "Fatal Error", % "CHDMAN.EXE not found!`n`nMake sure the chdman executable is located in the same directory as namDHC and try again.`n`nThe following chdman verions are supported:`n" arrayToComma(chdmanVerArray)
 	exitApp
 }
 
@@ -86,7 +99,7 @@ GUI.menu.Settings[1] := {name:"Number of jobs to run concurrently", 				gotolabe
 GUI.menu.Settings[2] := {name:"Show verbose window", 								gotolabel:"menuSelected", 				saveVar:"showVerboseWin", Fn:"showVerboseWindow"}
 GUI.menu.Settings[3] := {name:"Show a console for each job",						gotolabel:"menuSelected", 				saveVar:"showJobConsole"}
 GUI.menu.Settings[4] := {name:"Play sounds when finished job queue", 				gotolabel:"menuSelected", 				saveVar:"playFinishedSong"}
-GUI.menu.Settings[5] := {name:"Remove file entry from input list when finished", 	gotolabel:"menuSelected", 				saveVar:"removeFileEntryAfterFinish"}
+GUI.menu.Settings[5] := {name:"Remove file entry from list when successful", 		gotolabel:"menuSelected", 				saveVar:"removeFileEntryAfterFinish"}
 GUI.gVars.guiDefaultFont := guiDefaultFont()
 GUI.gVars.templateHDDropdownList :=  ""											; Hard drive template dropdown list
 . "|Conner CFA170A  -  163MB||"
@@ -228,7 +241,8 @@ menuExtHandler()
 		menu, % a_ThisMenu, check, % a_ThisMenuItem				; Make sure at least one item is checked
 		%buildList%.push(a_ThisMenuItem)
 	}
-	guiCtrl({(buildList) "Text":arrayToCommaList(%buildList%)})
+	
+	guiCtrl({(buildList) "Text": arrayToComma(%buildList%)})
 }
 
 
@@ -260,7 +274,7 @@ selectJob()
 		case "extractld": 	jobInputExts := ["chd"], 				jobOutputExts := ["raw"],				jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.keepIncomplete, chdmanOpt.inputParent, chdmanOpt.inputStartFrame, chdmanOpt.inputFrames]
 		case "extracthd": 	jobInputExts := ["chd"], 				jobOutputExts := ["img"],				jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.keepIncomplete, chdmanOpt.inputParent, chdmanOpt.inputStartByte, chdmanOpt.inputStartHunk, chdmanOpt.inputBytes, chdmanOpt.inputHunks]
 		case "extractraw":	jobInputExts := ["chd"], 				jobOutputExts := ["img", "raw"],		jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.keepIncomplete, chdmanOpt.inputParent, chdmanOpt.inputStartByte, chdmanOpt.inputStartHunk, chdmanOpt.inputBytes, chdmanOpt.inputHunks]
-		case "createcd": 	jobInputExts := ["cue", "toc", "gdi"],	jobOutputExts := ["chd"],				jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.deleteInputDir, chdmanOpt.keepIncomplete, chdmanOpt.numProcessors, chdmanOpt.outputParent, chdmanOpt.hunkSize, chdmanOpt.compression]
+		case "createcd": 	jobInputExts := ["cue", "toc", "gdi", "iso"],	jobOutputExts := ["chd"],			jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.deleteInputDir, chdmanOpt.keepIncomplete, chdmanOpt.numProcessors, chdmanOpt.outputParent, chdmanOpt.hunkSize, chdmanOpt.compression]
 		case "createld":	jobInputExts := ["raw"],				jobOutputExts := ["chd"],				jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.deleteInputDir, chdmanOpt.keepIncomplete, chdmanOpt.numProcessors, chdmanOpt.outputParent, chdmanOpt.inputStartFrame, chdmanOpt.inputFrames, chdmanOpt.hunkSize, chdmanOpt.compression]
 		case "createhd":	jobInputExts := ["img"],				jobOutputExts := ["chd"],				jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.deleteInputDir, chdmanOpt.keepIncomplete, chdmanOpt.numProcessors, chdmanOpt.compression, chdmanOpt.outputParent, chdmanOpt.size, chdmanOpt.inputStartByte, chdmanOpt.inputStartHunk, chdmanOpt.inputBytes, chdmanOpt.inputHunks, chdmanOpt.hunkSize, chdmanOpt.ident, chdmanOpt.template, chdmanOpt.chs, chdmanOpt.sectorSize]
 		case "createraw":	jobInputExts := ["img", "raw"],			jobOutputExts := ["chd"],				jobOptions := [chdmanOpt.force, chdmanOpt.deleteInputFiles, chdmanOpt.deleteInputDir, chdmanOpt.keepIncomplete, chdmanOpt.numProcessors, chdmanOpt.outputParent, chdmanOpt.inputStartByte, chdmanOpt.inputStartHunk, chdmanOpt.inputBytes, chdmanOpt.inputHunks, chdmanOpt.hunkSize, chdmanOpt.unitSize, chdmanOpt.compression]
@@ -304,7 +318,7 @@ addFolderFiles()
 				}
 		
 		case "buttonAddFolder":
-			inputFolder := selectFolderEx("", "Select a folder containing " showArrayAsCommas(selectedInputExt) " type files.", winExist(mainAppName)) ;fileSelectFolder, inputFolder, % "::{20d04fe0-3aea-1069-a2d8-08002b30309d}", 3, % "Select a folder containing " extFolder "type files."  
+			inputFolder := selectFolderEx("", "Select a folder containing " arrayToComma(selectedInputExt) " type files.", winExist(mainAppName)) ;fileSelectFolder, inputFolder, % "::{20d04fe0-3aea-1069-a2d8-08002b30309d}", 3, % "Select a folder containing " extFolder "type files."  
 			if ( inputFolder.SelectedDir ) {
 				inputFolder := regExReplace(inputFolder.SelectedDir, "\\$")
 				for idx, thisExt in selectedInputExt
@@ -648,6 +662,9 @@ buttonStartJobs()
 }
 
 
+
+; All jobs have finished or user pressed okay after report
+; --------------------------------------------------------
 finishJob()
 {		
 	global workQueueSize	
@@ -674,11 +691,11 @@ progressCancelButton()
 		cancelJob(pSlot)
 }
 
-clearTooltip() {
-	toolTip
-}
 
 
+
+; Create the main GUI
+; -------------------
 createMainGUI() 
 {
 	global
@@ -702,27 +719,30 @@ createMainGUI()
 	
 	gui 1:add, button, 		x15 y83 w80 h22 vbuttonAddFiles gaddFolderFiles hwndGUIbutton2, % "Add files"
 	gui 1:add, button, 		x+5 y83 w90 h22 vbuttonAddFolder gaddFolderFiles hwndGUIbutton3, % "Add a folder"
-	gui 1:add, text, 		x+310 y92, % "Input file types: "
 	
+	gui 1:add, text, 		x475 y93, % "Input file types: "
 	gui 1: font, Q5 s9 w700 c000000
-	gui 1:add, text, 		x+3 w85 vselectedInputExtText, % ""
+	gui 1:add, text, 		x+3 y93 w110 vselectedInputExtText, % ""
 	gui 1: font, Q5 s9 w400 c000000
-	
-	gui 1:add, button,		x+2 y83 w130 h22 gbuttonExtSelect vbuttonInputExtSelect hwndGUIbutton1, Select input file types	
+	gui 1:add, button,		x663 y83 w130 h22 gbuttonExtSelect vbuttonInputExtSelect hwndGUIbutton1, % "Select input file types"
 	
 	gui 1:add, listView, 	x15 y110 w778 h153 vlistViewInputFiles glistViewInputFiles altsubmit, % "File"
 	
 	gui 1:add, button, 		x15 y267 w90 vbuttonSelectAllInputFiles gselectInputFiles hwndGUIbutton5, % "Select all"
 	gui 1:add, button, 		x+5 y267 w90 vbuttonClearInputFiles gselectInputFiles hwndGUIbutton6, % "Clear selection"
-	gui 1:add, button, 		x+20 y267 w90 vbuttonRemoveInputFiles gselectInputFiles hwndGUIbutton4, % "Remove file"
+	gui 1:add, button, 		x+20 y267 w90 vbuttonRemoveInputFiles gselectInputFiles hwndGUIbutton4, % "Remove selection"
 
-	gui 1:add, text, 		x15 y300, % "Output Folder"
-	gui 1:add, edit, 		x15 y320 w638 veditOutputFolder +wantReturn, % outputFolder
+	gui 1:add, text, 		x15 y305, % "Output Folder"
+	gui 1:add, button, 		x15 y324 w90 vbuttonBrowseOutput geditOutputFolder hwndGUIbutton8, % "Select a folder"
+	gui 1:add, text, 		x485 y335,% "Output file type: "
+	gui 1: font, Q5 s9 w700 c000000
+	gui 1:add, text, 		x+3 y335 w100 vselectedOutputExtText, % ""
+	gui 1: font, Q5 s9 w400 c000000
+	gui 1:add, button,		x663 y324 w130 h24 vbuttonOutputExtSelect gbuttonExtSelect hwndGUIbutton7, % "Select output file type"
 	
-	gui 1:add, button,		x+10 y319 w130 h24 vbuttonOutputExtSelect gbuttonExtSelect hwndGUIbutton7, % "Select output file type"
-	gui 1:add, button, 		x15 y345 w90 vbuttonBrowseOutput geditOutputFolder hwndGUIbutton8, % "Select a folder"
-
-	gui 1:add, button,		x320 y385 w160 h35 vbuttonStartJobs gbuttonStartJobs hwndstartButtonHWND, Start all jobs!
+	gui 1:add, edit, 		x15 y352 w778 veditOutputFolder +wantReturn, % outputFolder
+	
+	gui 1:add, button,		x320 y385 w160 h35 vbuttonStartJobs gbuttonStartJobs hwndstartButtonHWND, % "Start all jobs!"
 
 	gui 1:add, groupBox, 	x5 w800 y435 vgroupboxOptions, % "CHDMAN Options"		; Position and height will be set in refreshGUI()
 
@@ -730,7 +750,7 @@ createMainGUI()
 		thisBtn := "GUIbutton" a_index
 		imageButton.create(%thisBtn%, GUI.buttons.default.normal, GUI.buttons.default.hover, GUI.buttons.default.clicked, GUI.buttons.default.disabled) ; Default button colors
 	}
-
+	
 	for key, thisOpt in chdmanOpt
 	{
 		; Options are moved to their positions when refreshGUI(true) is called
@@ -745,6 +765,8 @@ createMainGUI()
 }
 
 
+; Create GUI progress bar section
+; -------------------------------
 createProgressBars()
 {
 	global
@@ -795,6 +817,8 @@ createMenus()
 }
 
 
+; Refreshes GUI to reflect current settings or to default (clear) with true param
+; -------------------------------------------------------------------------------
 refreshGUI(resetGUI:=false) {
 	global
 	local opt, key, val, idx, optNum, checkOpt, changeOpt, x, y, yH, gPos
@@ -866,7 +890,7 @@ refreshGUI(resetGUI:=false) {
 					}
 				}
 			}
-			guiCtrl({(buildList) "Text": arrayToCommaList(%buildList%)})
+			guiCtrl({(buildList) "Text": arrayToComma(%buildList%)})
 		}
 
 		; Populate listview
@@ -919,6 +943,9 @@ refreshGUI(resetGUI:=false) {
 
 
 
+
+; Show or hide the verbose window
+; -------------------------------
 showVerboseWindow(show:="yes")
 {
 	global
@@ -930,7 +957,6 @@ showVerboseWindow(show:="yes")
 		gui 2:margin, 5, 10
 		gui 2:add, edit, % "w" verboseWinPosW-10 " h" verboseWinPosH-20 " readonly veditVerbose",
 	}
-	
 	if ( show == "yes" ) {
 		gui 2:show, % "w" verboseWinPosW " h" verboseWinPosH " x" verboseWinPosX " y" verboseWinPosY, % mainAppNameVerbose
 		sendMessage 0x115, 7, 0, Edit1, % mainAppNameVerbose		; Scroll to bottom of log
@@ -942,6 +968,9 @@ showVerboseWindow(show:="yes")
 }
 
 
+; Show CHD info info seperate window
+; -- grab new data 'JIT'
+; ----------------------------------
 showCHDInfo(fullFileName)
 {
 	global
@@ -1287,7 +1316,7 @@ clickedGUI(wParam, lParam, msg, hwnd)
 	if ( !jobWorkTally.started || a_GuiControl <> "buttonStartJobs" )
 		return
 		
-	if ( jobWorkTally.started && a_GuiControl == "buttonStartJobs" ) {
+	if ( jobWorkTally.started == true && a_GuiControl == "buttonStartJobs" ) {
 		msgBox, 4,, % "Are you sure you want to cancel all jobs?", 15
 		ifMsgBox No 
 			return
@@ -1348,11 +1377,13 @@ ini(job="read", var:="")
 }
 
 
+
 playSound() 
 {
 	SoundBeep, 300, 100
 	SoundBeep, 600, 600
 }
+
 
 
 ; Send data across script instances
@@ -1380,10 +1411,13 @@ strPutVar(string, ByRef var, encoding)
 }
 
 
-runCMD(CmdLine, workingDir:="", codepage:="CP0", Fn:="RunCMD_Output")  ;         runCMD v0.94
+; runCMD v0.94 by SKAN on D34E/D37C @ autohotkey.com/boards/viewtopic.php?t=74647
+; Based on StdOutToVar.ahk by Sean @ autohotkey.com/board/topic/15455-stdouttovar      
+
+runCMD(CmdLine, workingDir:="", codepage:="CP0", Fn:="RunCMD_Output")  
 {         
-	local        			 		; runCMD v0.94 by SKAN on D34E/D37C @ autohotkey.com/boards/viewtopic.php?t=74647                                                             
-	global a_Args					; Based on StdOutToVar.ahk by Sean @ autohotkey.com/board/topic/15455-stdouttovar
+	local        			 		                                                       
+	global a_Args					
 
 	Fn := isFunc(Fn) ? func(Fn) : 0
 	,dllCall("CreatePipe", "PtrP",hPipeR:=0, "PtrP",hPipeW:=0, "Ptr",0, "Int",0)
@@ -1540,14 +1574,6 @@ splitPath(inputFile)
 
 
 
-arrayToCommaList(array) 
-{
-	for idx, val in array
-		list .= val ", "
-	return regExReplace(list, ", $")
-}
-
-
 LV_GetText2(row, byRef rtn="") 	; To allow an inline call of the LV_GetText() function
 {
 	rtn := LV_GetText(str, row)
@@ -1594,7 +1620,7 @@ inArray(cVal, thisArray)
 
 ; Convert array to string of items seperated by commas
 ; -----------------------------------------------------
-showArrayAsCommas(thisArray, delim:=", ") 
+arrayToComma(thisArray, delim:=", ") 
 {
 	rtn := ""
 	for idx, val in thisArray
