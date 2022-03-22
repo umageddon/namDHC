@@ -9,7 +9,7 @@ The program needs CHDMAN.exe in the same directory as namDHC.exe to run - Curren
 ![screenshot2](https://user-images.githubusercontent.com/4080439/159406929-5de2bd22-c6fb-4e98-afc3-46c1093d091d.png)
 
 
-Basic instructions:
+Basic instructions
 -------------------
 1. Select your job type
 2. Select media type
