@@ -30,7 +30,7 @@ thread_log("OK!`n"
 
 mergeObj(recvData, sendData)															; Assign recvData to sendData as we will be sending the same info back and forth
 
-sendData.status := "starting"
+sendData.status := "started"
 sendData.report := stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(90) "`n"
 sendData.pid := dllCall("GetCurrentProcessId")
 sendData.progress := 0
@@ -183,7 +183,7 @@ thread_parseCHDMANOutput(data, lineNum, cPID)
 		
 		if ( !inArray(chdmanVer, chdmanVerArray) )  {
 			sendData.status := "halted"
-			sendData.log := "Error: Wrong CHDMAN version - " chdmanVer "`nSupported versions of CHDMAN are: " arrayToComma(chdmanVerArray) "`nHalted."
+			sendData.log := "Error: Wrong CHDMAN version - " chdmanVer "`nSupported versions of CHDMAN are: " arrayToString(chdmanVerArray) "`nHalted."
 			thread_log(sendData.log "`n")
 			thread_sendData()
 			exitApp
