@@ -113,7 +113,7 @@ killAllProcess()
 
 ; Set working global variables
 ; ----------------------------
-job := {workTally:{}, workQueue:[], scannedFiles:{}, queuedMsgData:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
+job := {workTally:{}, workQueue:[], scannedFiles:{}, queuedMsgData:[], InputExtTypes:[], OutputExtType:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
 GUI := { chdmanOpt:{}, dropdowns:{job:{}, media:{}}, buttons:{normal:[], hover:[], clicked:[], disabled:[]}, menu:{namesOrder:[], File:[], Settings:[], About:[]} }
 
 ; Set GUI variables
@@ -565,7 +565,7 @@ menuExtHandler(init:=false)
 		for idx, type in ["InputExtTypes", "OutputExtTypes"] {	
 			menu, % type, deleteAll											; Clear all old Input & Output menu items
 			
-			job["selected" type] := []										; Clear global Array of Input & Output extensions
+			job["selected" type] := []										; Clear global Array of selected Input & Output extensions
 			for idx2, ext in job[type] {									; Parse through job.InputExtTypes & job.OutputExtTypes
 				if ( !ext )
 					continue
@@ -574,7 +574,7 @@ menuExtHandler(init:=false)
 					continue												; By default, only check one extension of the Output menu if we are extracting an image
 				else {
 					menu, % type, Check, % ext								; Otherwise, check all extension menu items
-					job["selected" type].push(ext)							; Then add it to the input & output global selected extension array
+					job["selected" type].push(ext)										; Then add it to the input & output global selected extension array
 				}
 			}
 		}
@@ -598,14 +598,14 @@ menuExtHandler(init:=false)
 				job[selectedExtList].push(val)							; Add checked extension item(s) to the global array for reference later
 			}
 
-		if ( job["selected" type "ExtTypes"].length() == 0 ) {
+		if ( job[selectedExtList].length() == 0 ) {
 			menu, % a_ThisMenu, check, % a_ThisMenuItem					; Make sure at least one item is checked
 			job[selectedExtList].push(a_ThisMenuItem)
 		}
 	}
 	
-	for idx2, type in ["InputExtTypes", "OutputExtTypes"]
-		guiCtrl({(type) "Text": arrayToString(job["selected" type])})				; Populate the input & output extension text lists in the GUI
+	for idx, type in ["InputExtTypes", "OutputExtTypes"]				; Rerdraw text lists in the GUI
+		guiCtrl({(type) "Text": arrayToString(job["selected" type])})				
 }
 
 
