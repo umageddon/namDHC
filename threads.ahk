@@ -31,7 +31,7 @@ thread_log("OK!`n"
 mergeObj(recvData, sendData)															; Assign recvData to sendData as we will be sending the same info back and forth
 
 sendData.status := "started"
-sendData.report := stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(90) "`n"
+sendData.report := stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(75) "`n"
 sendData.pid := dllCall("GetCurrentProcessId")
 sendData.progress := 0
 sendData.log := "Starting " stringUpper(recvData.cmd) " job - " recvData.workingTitle
@@ -277,7 +277,7 @@ thread_killProcess()
 	if ( !recvData.keepIncomplete )
 		thread_deleteIncompleteFiles(recvData.toFileFull) 	; Will add to log and report
 	
-	sendData.report := "`nError: Job killed or cancelled by user`n"
+	sendData.report := "Error: Job killed or cancelled by user`n"
 	thread_finishJob()
 	exitApp
 	
