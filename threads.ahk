@@ -216,7 +216,7 @@ thread_sendData(msg:="")
 	if ( msg == false )
 		return
 	msg := (msg=="") ? sendData : msg
-	sendAppMessage(json(msg), mainAppName " ahk_id " mainAppHWND)										; Send back the data we've recieved plus any other new info
+	sendAppMessage(toJSON(msg), mainAppName " ahk_id " mainAppHWND)										; Send back the data we've recieved plus any other new info
 	sendData.log := ""
 	sendData.status := ""
 	sendData.report := ""
@@ -249,7 +249,7 @@ thread_receiveData(wParam, ByRef lParam)
 	global recvData
 	
 	stringAddress := numGet(lParam + 2*A_PtrSize) 
-	recvData := json(strGet(stringAddress,, "utf-8"))
+	recvData := fromJSON(strGet(stringAddress,, "utf-8"))
 	
 	if ( recvData.kill == "true" )									; User has requested this job to be cancelled
 		thread_killProcess()
