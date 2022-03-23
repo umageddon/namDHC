@@ -13,14 +13,17 @@ SetControlDelay, -1
 /*
  v1.0		- Initial release
 
- v1.01		- Added ISO input media support
+ v1.01		
+			- Added ISO input media support
 			- Minor fixes
 			
- v1.02		- Removed superfluous code
+ v1.02		
+			- Removed superfluous code
 			- Some spelling mistakes fixed
 			- Minor GUI changes
 
- v1.03		- Fixed Cancel all jobs button
+ v1.03		
+			- Fixed Cancel all jobs button
 			- Fixed output folder editfield allowing invalid characters
 			- Fixed files only being removed from listview after successful operation (when selected)
 			- Minor GUI bugs fixed
@@ -28,7 +31,8 @@ SetControlDelay, -1
 			- Added time elapsed to report
 			- Changed about window
 			
- v1.05		- Added update functionality
+ v1.05		
+			- Added update functionality
 			- GUI changes
 			- More GUI changes
 			- Fixed issue extracting or creating all extension types instead of selected 
