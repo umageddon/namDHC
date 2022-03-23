@@ -31,7 +31,6 @@ SetControlDelay, -1
  v1.05		- Added update functionality
 			- GUI changes
 			- More GUI changes
-			- Updater function changes
 			- Fixed issue extracting or creating all extension types instead of selected 
 			- Fixed JSON issues
 			- Bug fixes
