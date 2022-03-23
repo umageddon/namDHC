@@ -27,7 +27,9 @@ SetControlDelay, -1
 			- GUI changes
 			- Added time elapsed to report
 			- Changed about window
-			
+
+ v1.04		- Added update functionality
+			- Minor speedups (changed JSON library)
 */
 
 #Include SelectFolderEx.ahk
@@ -35,16 +37,15 @@ SetControlDelay, -1
 #Include ConsoleClass.ahk
 #Include JSON.ahk
 
-starttime := a_tickcount
-
-
 onExit("quitApp", 1)
 
 ; Default global values 
 ; ---------------------
-mainAppVersion := "1.03"
+currentAppVersion := "1.04"
+checkForUpdatesAtStartup := "yes"
 chdmanLocation := a_scriptDir "\chdman.exe"
 chdmanVerArray := ["0.236", "0.237", "0.238", "0.239", "0.240"]
+githubRepoURL := "https://api.github.com/repos/umageddon/namDHC/releases/62394694"
 mainAppName := "namDHC"
 mainAppNameVerbose := mainAppName " - Verbose"
 runAppName := mainAppName " - Job"
@@ -80,7 +81,8 @@ ini("read", ["jobQueueSize"
 			,"verboseWinPosW"
 			,"verboseWinPosH"
 			,"verboseWinPosX"
-			,"verboseWinPosY"])
+			,"verboseWinPosY"
+			,"checkForUpdatesAtStartup"])
 
 if ( !fileExist(chdmanLocation) ) {
 	msgbox 16, % "Fatal Error", % "CHDMAN.EXE not found!`n`nMake sure the chdman executable is located in the same directory as namDHC and try again.`n`nThe following chdman verions are supported:`n" arrayToString(chdmanVerArray)
@@ -117,11 +119,13 @@ GUI.buttons["start"] :=		{normal:[0, 0xFF74b6cc, "", 0xFF444444, 3],	hover:[0, 0
 GUI.menu["namesOrder"] := ["File", "Settings", "About"]
 GUI.menu.File[1] :=		{name:"Quit",											gotolabel:"quitApp",					saveVar:""}
 GUI.menu.About[1] :=	{name:"About",											gotolabel:"menuSelected",				saveVar:""}
-GUI.menu.Settings[1] :=	{name:"Number of jobs to run concurrently",				gotolabel:":SubSettingsConcurrently",	saveVar:""}
-GUI.menu.Settings[2] :=	{name:"Show verbose window",							gotolabel:"menuSelected",				saveVar:"showVerboseWin", Fn:"showVerboseWindow"}
-GUI.menu.Settings[3] :=	{name:"Show a console for each job",					gotolabel:"menuSelected",				saveVar:"showJobConsole"}
-GUI.menu.Settings[4] :=	{name:"Play sounds when finished job queue",			gotolabel:"menuSelected",				saveVar:"playFinishedSong"}
-GUI.menu.Settings[5] :=	{name:"Remove file entry from list when successful",	gotolabel:"menuSelected",				saveVar:"removeFileEntryAfterFinish"}
+GUI.menu.Settings[1] :=	{name:"Check for updates automatically",				gotolabel:"menuSelected",				saveVar:"checkForUpdatesAtStartup"}
+GUI.menu.Settings[2] :=	{name:"Number of jobs to run concurrently",				gotolabel:":SubSettingsConcurrently",	saveVar:""}
+GUI.menu.Settings[3] :=	{name:"Show a verbose window",							gotolabel:"menuSelected",				saveVar:"showVerboseWin", Fn:"showVerboseWindow"}
+GUI.menu.Settings[4] :=	{name:"Show a console window for each new job",			gotolabel:"menuSelected",				saveVar:"showJobConsole"}
+GUI.menu.Settings[5] :=	{name:"Play a sound when finished jobs",				gotolabel:"menuSelected",				saveVar:"playFinishedSong"}
+GUI.menu.Settings[6] :=	{name:"Remove entry from list when successful",			gotolabel:"menuSelected",				saveVar:"removeFileEntryAfterFinish"}
+
 
 ; Set misc GUI variables
 ; -------------------------
@@ -196,6 +200,10 @@ mainAppHWND := winExist(mainAppName)
 mainAppMenuGet := DllCall("GetMenu", "uint", mainAppHWND)		; Save menu to retrieve later
 mainMenuVisible := true
 
+
+if ( checkForUpdatesAtStartup == "yes" )
+	checkForUpdates()
+
 onMessage(0x03,		"moveGUIWin")			; If windows are moved, save positions in moveGUIWin()
 onMessage(0x004A,	"receiveData")			; Receive messages from threads
 
@@ -249,22 +257,24 @@ menuSelected()
 			gui 4: margin, 20 20
 			gui 4: font, s15 Q5 w700 c000000
 			gui 4: add, text, x10 y10, % mainAppName
+			
 			gui 4: font, s10 Q5 w700 c000000
-			gui 4: add, text, x100 y17, % " v" mainAppVersion
+			gui 4: add, text, x100 y17, % " v" currentAppVersion
 			
 			gui 4: font, s10 Q5 w400 c000000
-			gui 4: add, text, x10 y40, % "A Windows frontend for the MAME CHDMAN tool"
-			gui 4: add, link, x10 y100, Updates and bug reports: <a href="https://github.com/umageddon/namDHC">https://github.com/umageddon/namDHC</a>
-			gui 4: add, link, x10 y120, MAME Info: <a href="https://www.mamedev.org/">https://www.mamedev.org/</a>
+			gui 4: add, text, x10 y35, % "A Windows frontend for the MAME CHDMAN tool"
+			
+			gui 4: add, button, x10 y70 w130 h22 gcheckForUpdates, % "Check for updates"
+			
+			gui 4: add, link, x10 y110, Github: <a href="https://github.com/umageddon/namDHC">https://github.com/umageddon/namDHC</a>
+			gui 4: add, link, x10 y130, MAME Info: <a href="https://www.mamedev.org/">https://www.mamedev.org/</a>
 			
 			gui 4: font, s9 Q5 w400 c000000
-			gui 4: add, text, x170 y145, % "(C) Copyright 2022 Umageddon"
+			gui 4: add, text, x10 y165, % "(C) Copyright 2022 Umageddon"
 			gui 4: show, w500 center, About
 			Gui 4:+LastFound +AlwaysOnTop +ToolWindow
 			controlFocus,, About 												; Removes outline around html anchor
 			return
-			
-			
 	}
 }
 
@@ -723,7 +733,7 @@ buttonStartJobs()
 			thisJob.pid := pid
 			
 			while ( pid <> msgData[thisJob.pSlot].pid ) {											; Wait for confirmation that msg was receieved												
-				sendAppMessage(toJSON(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
+				sendAppMessage(json(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
 				sleep 25
 			}
 		}
@@ -838,7 +848,7 @@ cancelJob(pSlot)
 
 	log("Job " msgData[pSlot].idx " - User requested to cancel...")
 	msgData[pSlot].kill := "true"
-	return sendAppMessage(toJSON(msgData[pSlot]), "ahk_class AutoHotkey ahk_pid  " msgData[pSlot].pid)
+	return sendAppMessage(json(msgData[pSlot]), "ahk_class AutoHotkey ahk_pid  " msgData[pSlot].pid)
 }
 
 
@@ -855,7 +865,7 @@ createMainGUI()
 	
 	gui 1:add, statusBar
 	SB_SetParts(640, 175)
-	SB_SetText("  namDHC v" mainAppVersion " for CHDMAN", 2)
+	SB_SetText("  namDHC v" currentAppVersion " for CHDMAN", 2)
 
 	gui 1:add, groupBox, 	x5 w800 h425 vgroupboxJob, Job
 
@@ -1217,7 +1227,7 @@ receiveData(wParam, ByRef lParam)
 {
 	global msgData, queuedMsgData
 	
-	data := fromJSON(strGet( numGet(lParam + 2*A_PtrSize) ,, "utf-8"))
+	data := json(strGet( numGet(lParam + 2*A_PtrSize) ,, "utf-8"))
 	msgData[data.pSlot] := data		; Assign globally so we can use anywhere in script - mainly to kill job if user selects	
 	queuedMsgData.push(data)
 	
@@ -1437,14 +1447,14 @@ getFilesFromCUEGDITOC(inputFiles)
 
 ; Log messages and send to verbose window
 ; --------------------------------------
-log(newMsg:="", newline:=true, clear:=false) 
+log(newMsg:="", newline:=true, clear:=false, timestamp:=true) 
 {
 	global mainAppNameVerbose, editVerbose
 	
 	if ( !newMsg ) 
 		return false
 	
-	newMsg := "[" a_Hour ":" a_Min ":" a_Sec "]  " newMsg
+	newMsg := timestamp ? "[" a_Hour ":" a_Min ":" a_Sec "]  " newMsg : newMsg
 	msg := clear? newMsg : guiCtrlGet("editVerbose", 2) . newMsg
 
 	guiCtrl({editVerbose:msg (newline? "`n" : "")}, 2)
@@ -2007,6 +2017,101 @@ millisecToTime(msec)
 }
 
 
+; Thanks maestrith 
+; https://www.autohotkey.com/board/topic/88685-download-a-url-to-a-variable/
+URLDownloadToVar(url){
+	try {
+		hObject:=ComObjCreate("WinHttp.WinHttpRequest.5.1")
+		hObject.Open("GET",url)
+		hObject.Send()
+		return hObject.ResponseText
+	}
+}
+
+
+checkForUpdates(wParam:="", userClicked:=false) 
+{
+	global currentAppVersion, mainAppName, githubRepoURL
+	gui 4:+OwnDialogs
+	
+	log("Checking for updates ... ")
+	
+	if ( !a_isCompiled ) {
+	 	if ( userClicked )
+			msgbox 16, % "Error", % "Can only update compiled binaries"
+		log("Error updating: Can only update compiled binaries")  ; no time-stamp
+		return
+	}
+		
+	/*
+	obj.tag_name 						= version (ie-"namDHCv1.03")
+	obj.body							= version changes
+	obj.assets[1].browser_download_url	= URL *should* point to chdman.exe
+	obj.assets[2].browser_download_url	= URL *should* point to namDHC.exe
+	obj.assets[3].browser_download_url	= URL *should* point to namDHC_vx.xx.zip
+	obj.created_at						= date created
+	*/	
+	JSON := URLDownloadToVar(githubRepoURL)
+	obj := json(JSON)
+	
+	if ( !isObject(obj) )
+		log("Error updating: Update info invalid")
+	
+	else if ( obj.message && inStr(obj.message, "limit exceeded") )
+		log("Error updating: Github API limit exceeded")
+
+	else if ( !obj.tag_name )
+		log("Error updating: Update info invalid")
+		
+	else {
+		newVersion := strReplace(obj.tag_name, "namDHCv", "")
+		
+		if ( newVersion == currentAppVersion ) {
+			if ( userClicked )
+				msgbox 64, % "No new updates found", % "You are running the current version"
+			log("No new updates found. You are running the current version")
+			return
+		}
+		
+		else if ( newVersion < currentAppVersion ) {
+			if ( userClicked )
+				msgbox 16, % "Error", % "Your version is newer then the current release!"
+			log("Your version is newer then the current release!")
+		}
+		else if ( newVersion > currentAppVersion ) {
+			log("An update was found: v" newVersion)
+			msgBox, 68, % "Update available", % "A new version of " mainAppName " is available!`n`nCurrent version: v" currentAppVersion "`nLatest version: v" newVersion "`n`nChanges:`n" strReplace(obj.body, "-", "    -") "`n`nDo you want to update?"
+			ifmsgbox Yes 
+			{
+				for idx, asset in obj.assets {
+					if ( inStr(asset.browser_download_url, "namDHC.exe") )
+						thisBinURL := asset.browser_download_url
+				}
+				if ( !thisBinURL ) {
+					msgbox 16, % "Error", % "Error downloading update!"
+					log("Error updating: Update binary couldn't be found in the repo!")
+					return
+				}
+				tempDir := a_Temp "\namDHC"
+				fileCreateDir, % tempDir
+				tempEXEFullFile := tempDir "\namDHC.exe"
+				urlDownloadToFile, % thisBinURL, % tempEXEFullFile
+				if ( !fileExist(tempEXEFullFile) ) {
+					msgbox 16, % "Error", % "Error downloading update!"
+					log("Error updating: There was an error downloading the update")
+					return
+				}
+				batchFile := tempDir "\update.bat"
+				fileDelete(batchFile, 5, 10)
+				batchText := "@timeout /t 1 /nobreak > NUL`r`n@del """ a_ScriptFullPath """ > NUL`r`n@copy """ tempEXEFullFile """ """ a_ScriptFullPath """ > NUL`r`n@start " a_ScriptFullPath "`r`n@exit 0`r`n"
+				fileAppend, % batchText, % batchFile
+				sleep 25
+				run % batchFile
+				exitApp
+			}
+		}
+	}
+}
 
 ; Close App
 ; ---------
