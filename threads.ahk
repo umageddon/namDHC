@@ -31,7 +31,7 @@ thread_log("OK!`n"
 mergeObj(recvData, sendData)															; Assign recvData to sendData as we will be sending the same info back and forth
 
 sendData.status := "started"
-sendData.report := stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(75) "`n"
+sendData.report := stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(77) "`n"
 sendData.pid := dllCall("GetCurrentProcessId")
 sendData.progress := 0
 sendData.log := "Starting " stringUpper(recvData.cmd) " job - " recvData.workingTitle
@@ -39,9 +39,10 @@ sendData.progressText := "Starting job -  " recvData.workingTitle
 thread_sendData()	
 
 if ( recvData.outputFolder && fileExist(recvData.outputFolder) <> "D" )
-	thread_createParentDir()
+	thread_createParentDir(recvData.outputFolder)
 if ( recvData.createSubDir )
-	thread_createSubDir()
+	thread_createSubDir(recvData.createSubDir)
+
 
 fromFile := recvData.fromFileFull ? (inStr(recvData.fromFileFull, a_space)? """" recvData.fromFileFull """" : recvData.fromFileFull) : ""
 toFile := recvData.toFileFull ? (inStr(recvData.toFileFull, a_space)? """" recvData.toFileFull """" : recvData.toFileFull) : ""
@@ -374,11 +375,14 @@ thread_deleteInputFilesAfter(delfile)
 	
 ; Create parent output folder
 ;---------------------------------------------------------------------------------------
-thread_createParentDir() 
+thread_createParentDir(newFolder) 
 {
 	global recvData, sendData
 	
-	createThisDir := createFolder(recvData.outputFolder)
+	if ( !newFolder )
+		return false
+	
+	createThisDir := createFolder(newFolder)
 	if ( createThisDir ) {
 		recvData.outputFolder := createThisDir
 		sendData.status := "createParentDir"
@@ -402,11 +406,12 @@ thread_createParentDir()
 	
 ; Create a new subdirectory if asked 
 ;---------------------------------------------------------------------------------------
-thread_createSubDir() 
+thread_createSubDir(newFolder) 
 {
 	global sendData, recvData
 	
-	newfolder := recvData.outputFolder "\" recvData.toFileNoExt
+	if ( !newFolder )
+		return false
 	
 	createThisDir := createFolder(newfolder)				 ; createThisDir() returns the full path if successfully created
 	if ( createThisDir ) {
