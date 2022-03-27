@@ -2218,8 +2218,8 @@ checkForUpdates(arg1:="", userClick:=false)
 		log("Error updating: Update info invalid")
 		
 	else {
-		newVersion := strReplace(obj.tag_name, "namDHCv", "")
-		
+		newVersion := regExReplace(obj.tag_name, "namDHC|v", "")
+
 		if ( newVersion == currentAppVersion ) {
 			log("No new updates found. You are running the latest version")
 			if ( userClick )
