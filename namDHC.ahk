@@ -11,19 +11,19 @@ SetWinDelay, -1
 SetControlDelay, -1
 
 /*
- v1.00
+v1.00
 	- Initial release
 
- v1.01
+v1.01
 	- Added ISO input media support
 	- Minor fixes
 
- v1.02
+v1.02
 	- Removed superfluous code
 	- Some spelling mistakes fixed
 	- Minor GUI changes
 
- v1.03
+v1.03
 	- Fixed Cancel all jobs button
 	- Fixed output folder editfield allowing invalid characters
 	- Fixed files only being removed from listview after successful operation (when selected)
@@ -32,13 +32,28 @@ SetControlDelay, -1
 	- Added time elapsed to report
 	- Changed about window
 
- v1.05
+v1.05
 	- Added update functionality
 	- GUI changes
 	- More GUI changes
 	- Fixed issue extracting or creating all extension types instead of selected 
 	- Fixed JSON issues
 	- Bug fixes
+	
+ v1.06
+	- Allows creation of multiple output filetypes during a single job.
+	  Filetypes will be added to the file and directory names in parenthesis.
+	  Example of files from a PSX game with both TOC and CUE types selected for output:
+		PSXGAME (TOC).toc
+		PSXGAME (TOC).bin
+		PSXGAME (CUE).bin
+		PSXGAME (CUE).cue
+	- User will be prompted to rename any duplicate output files
+	- Changed the finished job sound to play media instead of just beeps
+	- Fixed main menu not hiding during job processes
+	- Updater wont automatically update even when selecting no
+	- Bugfixes, GUI changes n' stuff
+	
 */
 
 #Include SelectFolderEx.ahk
@@ -51,7 +66,7 @@ onExit("quitApp", 1)
 
 ; Default global values 
 ; ---------------------
-currentAppVersion := "1.05"
+currentAppVersion := "1.06"
 checkForUpdatesAtStartup := "yes"
 chdmanLocation := a_scriptDir "\chdman.exe"
 chdmanVerArray := ["0.236", "0.237", "0.238", "0.239", "0.240"]
@@ -100,6 +115,7 @@ if ( !fileExist(chdmanLocation) ) {
 }
 
 
+
 ; Run a chdman thread
 ; Will be called when running chdman - As to allow for a one file executable
 ;-------------------------------------------------------------
@@ -113,7 +129,7 @@ killAllProcess()
 
 ; Set working global variables
 ; ----------------------------
-job := {workTally:{}, workQueue:[], scannedFiles:{}, queuedMsgData:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
+job := {workTally:{}, workQueue:[], scannedFiles:{}, queuedMsgData:[], InputExtTypes:[], OutputExtType:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
 GUI := { chdmanOpt:{}, dropdowns:{job:{}, media:{}}, buttons:{normal:[], hover:[], clicked:[], disabled:[]}, menu:{namesOrder:[], File:[], Settings:[], About:[]} }
 
 ; Set GUI variables
@@ -215,17 +231,16 @@ createProgressBars()
 createMenus()
 
 showVerboseWindow(showVerboseWin)			; Check or uncheck item "Show verbose window"  and show the window 
-selectJob()									; Select 1st selection in job dropdown list and trigger refreshGUI()																	
-
-mainAppHWND := winExist(mainAppName)
-mainAppMenuGet := DllCall("GetMenu", "uint", mainAppHWND)		; Save menu to retrieve later
-mainMenuVisible := true
+selectJob()									; Select 1st selection in job dropdown list and trigger refreshGUI()
 
 if ( checkForUpdatesAtStartup == "yes" )
 	checkForUpdates()
 
 onMessage(0x03,		"moveGUIWin")			; If windows are moved, save positions in moveGUIWin()
 onMessage(0x004A,	"receiveData")			; Receive messages from threads
+
+sleep 100 									; Needed (?) to allow window to be detected
+mainAppHWND := winExist(mainAppName)
 
 log(mainAppName " ready.")
 
@@ -338,12 +353,12 @@ selectJob()
 		case GUI.dropdowns.job.addMeta.desc:
 			newStartButtonLabel := "ADD METADATA"
 			guiCtrl({dropdownMedia:"|CHD Files"})
-			msgbox % "Not implemented yet"
+			msgbox 64, % "", % "Option not implemented yet"
 		
 		case GUI.dropdowns.job.delMeta.desc:
 			newStartButtonLabel := "DELETE METADATA"
 			guiCtrl({dropdownMedia:"|CHD Files"})
-			msgbox % "Not implemented yet"
+			msgbox 64, % "", % "Option not implemented yet"
 	}
 	
 	guiCtrl({buttonStartJobs:newStartButtonLabel})	; New start button label
@@ -369,6 +384,7 @@ selectMedia()
 		case GUI.dropdowns.media.hd:	mediaSel := "hd"
 		case GUI.dropdowns.media.ld:	mediaSel := "ld"
 		case GUI.dropdowns.media.raw:	mediaSel := "raw"
+		default: mediaSel := "chd"
 	}
 	
 	; Assign job variables according to media
@@ -395,7 +411,9 @@ selectMedia()
 		case "createraw":	job.InputExtTypes := ["img", "raw"],				job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.inputStartByte, GUI.chdmanOpt.inputStartHunk, GUI.chdmanOpt.inputBytes, GUI.chdmanOpt.inputHunks, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.unitSize, GUI.chdmanOpt.compression]
 		case "info":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
 		case "verify":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
-	}
+		case "addmeta":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
+		case "delmeta":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
+	}	
 	
 	; Hide and uncheck ALL options
 	; ------------------------------------------------
@@ -406,7 +424,7 @@ selectMedia()
 	
 	; Show checkbox options depending on media selected
 	; -------------------------------------------------
-	if ( job.Options.length() > 0 )	{													
+	if ( job.Options.length() )	{													
 		guiToggle("show", "groupboxOptions")
 		gPos := guiGetCtrlPos("groupboxOptions")														; Assign x & y values to groupbox x & y positions
 		idx := 0, yH := 0, x := gPos.x+10, y := gPos.y										
@@ -469,6 +487,10 @@ refreshGUI()
 	; -------------------------------
 	guiToggle("enable", "all")
 	
+	; Show the main menu
+	; ---------------------------------------
+	toggleMainMenu("show")
+	
 	; Changes to elements depending on job selected
 	; ----------------------------------------------
 	switch dropdownJob {
@@ -481,7 +503,6 @@ refreshGUI()
 
 		case GUI.dropdowns.job.verify.desc:
 			guiToggle("disable", ["dropdownMedia", "buttonOutputExtType", "buttonInputExtType", "editOutputFolder", "buttonBrowseOutput", "buttonBrowseOutput"])
-			newStartButtonLabel := "VERIFY CHD"
 			
 		case GUI.dropdowns.job.addMeta.desc:
 			guiToggle("disable", "all")
@@ -511,14 +532,7 @@ refreshGUI()
 		guiToggle("hide", ["progress" a_index, "progressText" a_index, "progressCancelButton" a_index])
 
 
-	; Show the main menu
-	; ---------------------------------------
-	if ( !mainMenuVisible && mainAppMenuGet ) {
-		dllCall("SetMenu", "uint", mainAppHWND, "uint", mainAppMenuGet) 					
-		mainAppMenuGet := DllCall("GetMenu", "uint", mainAppHWND)
-		mainMenuVisible := true
-	}
-	
+
 	; Trigger listview() to refresh selection buttons
 	; ---------------------------------------
 	listViewInputFiles()
@@ -565,7 +579,7 @@ menuExtHandler(init:=false)
 		for idx, type in ["InputExtTypes", "OutputExtTypes"] {	
 			menu, % type, deleteAll											; Clear all old Input & Output menu items
 			
-			job["selected" type] := []										; Clear global Array of Input & Output extensions
+			job["selected" type] := []										; Clear global Array of selected Input & Output extensions
 			for idx2, ext in job[type] {									; Parse through job.InputExtTypes & job.OutputExtTypes
 				if ( !ext )
 					continue
@@ -574,7 +588,7 @@ menuExtHandler(init:=false)
 					continue												; By default, only check one extension of the Output menu if we are extracting an image
 				else {
 					menu, % type, Check, % ext								; Otherwise, check all extension menu items
-					job["selected" type].push(ext)							; Then add it to the input & output global selected extension array
+					job["selected" type].push(ext)										; Then add it to the input & output global selected extension array
 				}
 			}
 		}
@@ -585,9 +599,10 @@ menuExtHandler(init:=false)
 		
 		switch a_ThisMenu {												; a_ThisMenu is either 'InputExtTypes' or 'OutputExtTypes'
 			case "OutputExtTypes":										; Only one output extension is allowed to be checked
-				for idx, val in job.OutputExtTypes
-					menu, OutputExtTypes, Uncheck, % val				; Uncheck all menu items, 
-				menu, OutputExtTypes, Check, % a_ThisMenuItem			; Then check what was clicked, so only one is ever checked
+				;for idx, val in job.OutputExtTypes
+				;	menu, OutputExtTypes, Uncheck, % val				; Uncheck all menu items, 
+				;menu, OutputExtTypes, Check, % a_ThisMenuItem			; Then check what was clicked, so only one is ever checked
+				menu, OutputExtTypes, Togglecheck, % a_ThisMenuItem		; Toggle checking item
 		
 			case "InputExtTypes": 
 				menu, InputExtTypes, Togglecheck, % a_ThisMenuItem		; Toggle checking item
@@ -598,14 +613,14 @@ menuExtHandler(init:=false)
 				job[selectedExtList].push(val)							; Add checked extension item(s) to the global array for reference later
 			}
 
-		if ( job["selected" type "ExtTypes"].length() == 0 ) {
+		if ( job[selectedExtList].length() == 0 ) {
 			menu, % a_ThisMenu, check, % a_ThisMenuItem					; Make sure at least one item is checked
 			job[selectedExtList].push(a_ThisMenuItem)
 		}
 	}
 	
-	for idx2, type in ["InputExtTypes", "OutputExtTypes"]
-		guiCtrl({(type) "Text": arrayToString(job["selected" type])})				; Populate the input & output extension text lists in the GUI
+	for idx, type in ["InputExtTypes", "OutputExtTypes"]				; Rerdraw text lists in the GUI
+		guiCtrl({(type) "Text": arrayToString(job["selected" type])})				
 }
 
 
@@ -817,6 +832,12 @@ buttonStartJobs()
 			SB_SetText("Creating work Queue" , 1)
 			log("Creating work queue")
 			job.workQueue := createjob(job.Cmd, job.Options, job.selectedOutputExtTypes, job.scannedFiles[job.Cmd], outputFolder)	; Create a queue (object) of files to process
+			if ( !job.workQueue || job.workQueue.count() == 0 ) {
+				log("No jobs found in the work queue")
+				msgbox, 16, % "Error", % "No jobs in the work queue!"
+				return
+			}
+				
 		
 		case "verify":
 			job.workQueue := createjob("verify", "", "", job.scannedFiles["verify"])
@@ -913,9 +934,9 @@ buttonStartJobs()
 	
 	msgData := [], thisJob := {}, availPSlots := []
 	job.workTally := {started:false, running:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:"", report:""}		; Set variables
-	workQueueSize := (job.workTally.total < jobQueueSize)? job.workTally.total : jobQueueSize									; If number of jobs is less then queue count, only display those progress bars
+	workQueueSize := (job.workTally.total < jobQueueSize)? job.workTally.total : jobQueueSize								; If number of jobs is less then queue count, only display those progress bars
 
-	dllCall("SetMenu", "uint", mainAppHWND, "uint", 0), mainMenuVisible := false											; Hide main menu bar (selecting menu when running jobs stops messages from being receieved from threads)								
+	toggleMainMenu("hide")																									; Hide main menu bar (selecting menu when running jobs stops messages from being receieved from threads)
 	guiToggle("disable", "all")																								; Disable all controls while job is in progress
 	guiToggle("hide", "buttonStartJobs")
 	guiToggle(["show", "enable"], "buttonCancelAllJobs")
@@ -925,13 +946,13 @@ buttonStartJobs()
 	guiCtrl("moveDraw", {groupBoxProgress:"x5 y" (gPos.y + gPos.h) + 5 " h" workQueueSize*25 + 60})							; Move and resize progress groupbox
 	guiCtrl("moveDraw", {progressAll:"y" y, progressTextAll: "y" y+4}) 														; Set All Progress bar and it's text Y position
 	guiCtrl( {progressAll:0, progressTextAll:"0 jobs of " job.workTally.total " completed - 0%"})
-	guiToggle(["show","enable"], ["groupBoxProgress", "progressAll", "progressTextAll"])									; Show total progress bars
+	guiToggle(["show", "enable"], ["groupBoxProgress", "progressAll", "progressTextAll"])									; Show total progress bars
 	y += 35
 	loop % workQueueSize {																	
 		guiCtrl("moveDraw", {("progress" a_index):"y" y, ("progressText" a_index):"y" y+4, ("progressCancelButton" a_index):"y" y})	; Move the progress bars into place
 		y += 25
 		guiCtrl({("progress" a_index):0, ("progressText" a_index): ""})														; Clear the bars text and zero out percentage
-		guiToggle(["enable","show"],["progress" a_index, "progressText" a_index, "progressCancelButton" a_index])			; Enable and show job progress bars
+		guiToggle(["enable", "show"],["progress" a_index, "progressText" a_index, "progressCancelButton" a_index])			; Enable and show job progress bars
 		availPSlots.push(a_index)																							; Add available progress slots to queue
 	}
 	gui 1:show, autosize																									; Resize main window to fit progress bars
@@ -945,22 +966,22 @@ buttonStartJobs()
 	loop {
 		if ( availPSlots.length() > 0 && job.workQueue.length() > 0 ) {									; Wait for an available slot in the queue to be added
 			thisJob := job.workQueue.removeAt(1)														; Grab the first job from the work queue and assign parameters to variable
-			thisJob.pSlot := availPSlots.removeAt(1)												; Assign the progress bar a y position from available queue
+			thisJob.pSlot := availPSlots.removeAt(1)													; Assign the progress bar a y position from available queue
 			msgData[thisJob.pSlot] := {}
 			msgData[a_index].timeout := 0
 
-			runCmd := a_ScriptName " threadMode " (showJobConsole == "yes" ? "console" : "")		; "threadmode" flag tells script to run this script as a thread
-			run % runCmd ,,, pid																	; Run it
+			runCmd := a_ScriptName " threadMode " (showJobConsole == "yes" ? "console" : "")			; "threadmode" flag tells script to run this script as a thread
+			run % runCmd ,,, pid																		; Run it
 			thisJob.pid := pid
 			
-			while ( pid <> msgData[thisJob.pSlot].pid ) {											; Wait for confirmation that msg was receieved												
+			while ( pid <> msgData[thisJob.pSlot].pid ) {												; Wait for confirmation that msg was receieved												
 				sendAppMessage(toJSON(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
 				sleep 25
 			}
 		}
 		
 		if ( job.workTally.finished == job.workTally.total || job.workTally.started == false )
-			break																					; Job queue has finished
+			break																						; Job queue has finished
 	
 		sleep 250
 	}
@@ -968,6 +989,9 @@ buttonStartJobs()
 	setTimer, jobTimeoutTimer, off
 	job.workTally.started := false
 	job.endTime := a_Tickcount
+	guiToggle("hide", "buttonCancelAllJobs")
+	guiToggle("show", "buttonStartJobs")
+	guiToggle("disable", "all")
 	
 	if ( job.workTally.haltedMsg ) {																; There was a fatal error that didnt allow any jobs to be attempted
 		log("Fatal Error: " job.workTally.haltedMsg)
@@ -986,9 +1010,9 @@ buttonStartJobs()
 		log( regExReplace(strReplace(fnMsg, "`n", ", "), ", $", "") )
 		
 		if ( playFinishedSong == "yes" && job.workTally.success )									; Play sounds to indicate we are done (only if at least one successful job)
-			playSound()		
-	
-		msgBox, 68, % mainAppName, % "Finished!`nWould you like to see a report?"
+			playSound()
+		
+		msgBox, 36, % mainAppName, % "Finished!`nWould you like to see a report?"
 		ifMsgBox Yes
 		{
 			gui 5: destroy
@@ -1006,7 +1030,6 @@ buttonStartJobs()
 			5guiClose()
 	}
 }
-
 
 
 ; All jobs have finished or user pressed window close
@@ -1028,7 +1051,7 @@ progressCancelButton()
 	if ( !a_guiControl )
 		return
 	pSlot := strReplace(a_guiControl, "progressCancelButton", "")
-	msgBox, 4,, % "Cancel job " msgData[pSlot].idx " - " stringUpper(msgData[pSlot].cmd) ": " msgData[pSlot].workingTitle "?", 15
+	msgBox, 36,, % "Cancel job " msgData[pSlot].idx " - " stringUpper(msgData[pSlot].cmd) ": " msgData[pSlot].workingTitle "?", 15
 	ifMsgBox Yes
 		cancelJob(pSlot)
 }
@@ -1044,7 +1067,7 @@ cancelAllJobs()
 		return
 	
 	gui 1: +ownDialogs
-	msgBox, 4,, % "Are you sure you want to cancel all jobs?", 15
+	msgBox, 36,, % "Are you sure you want to cancel all jobs?", 15
 	ifMsgBox No
 		return
 	
@@ -1107,7 +1130,7 @@ createMainGUI()
 	
 	gui 1:add, text, 		x475 y93, % "Input file types: "
 	gui 1: font, Q5 s9 w700 c000000
-	gui 1:add, text, 		x+3 y93 w110 vInputExtTypesText, % ""
+	gui 1:add, text, 		x+3 y93 w100 vInputExtTypesText, % ""
 	gui 1: font, Q5 s9 w400 c000000
 	gui 1:add, button,		x663 y83 w130 h22 gbuttonExtSelect vbuttonInputExtType hwndGUIbutton1, % "Select input file types"
 	
@@ -1119,9 +1142,9 @@ createMainGUI()
 
 	gui 1:add, text, 		x15 y305, % "Output Folder"
 	gui 1:add, button, 		x15 y324 w90 vbuttonBrowseOutput geditOutputFolder hwndGUIbutton8, % "Select a folder"
-	gui 1:add, text, 		x485 y335,% "Output file type: "
+	gui 1:add, text, 		x475 y335,% "Output file types: "
 	gui 1: font, Q5 s9 w700 c000000
-	gui 1:add, text, 		x+3 y335 w100 vOutputExtTypesText, % ""
+	gui 1:add, text, 		x+3 y335 w75 vOutputExtTypesText, % ""
 	gui 1: font, Q5 s9 w400 c000000
 	gui 1:add, button,		x663 y324 w130 h24 vbuttonOutputExtType gbuttonExtSelect hwndGUIbutton7, % "Select output file type"
 	
@@ -1148,6 +1171,7 @@ createMainGUI()
 		gui 1:add, edit,			hidden w165 v%optName%_edit,
 		gui 1:add, dropdownList, 	hidden w165 altsubmit v%optName%_dropdown,				; ... so we can use for dropdown list to place at same location (default is hidden)
 	}
+
 }
 
 
@@ -1209,6 +1233,26 @@ createMenus()
 }
 
 
+
+; Show or hide main menu
+; -------------------------------
+toggleMainMenu(showOrHide:="show") 
+{
+	global mainAppHWND
+	static visble, hMenu
+	
+	if ( !hMenu )
+		hMenu := DllCall("GetMenu", "uint", mainAppHWND)		; First save menu to retrieve later
+	
+	if ( showOrHide == "show" && !visble ) {
+		dllCall("SetMenu", "uint", mainAppHWND, "uint", hMenu) 					
+		visble := true
+	}
+	else if ( showOrHide == "hide" && visble ) {
+		dllCall("SetMenu", "uint", mainAppHWND, "uint", 0)
+		visble := false
+	}
+}
 
 
 ; Show or hide the verbose window
@@ -1417,10 +1461,10 @@ jobTimeoutTimer()
 
 ; Create  or add to the input files queue (return a work queue)
 ; -------------------------------------------------------
-createJob(command, theseJobOpts, OutputExt="", inputFiles="", outputFolder="") 
+createJob(command, theseJobOpts, OutputExts="", inputFiles="", outputFolder="") 
 {
 	global
-	local wQueue := [], idx, thisOpt, optVal, cmdOpts := "", fromFileFull, fileFull, toExt
+	local wQueue := [], dupFound := {}, idx, idx2, obj, thisOpt, optVal, cmdOpts := "", fromFileFull, splitFromFile, toExt, q
 
 	gui 1:submit, nohide
 	
@@ -1440,37 +1484,62 @@ createJob(command, theseJobOpts, OutputExt="", inputFiles="", outputFolder="")
 		}
 	}
 	
-	for idx1, fromFileFull in (isObject(inputFiles) ?  inputFiles : [])
-	{
-		fileFull := splitPath(fromFileFull)
-		for idx, toExt in (isObject(OutputExt) ? OutputExt : ["dummy"]) {
+	for idx1, fromFileFull in (isObject(inputFiles) ? inputFiles : [inputFiles]) {
+		splitFromFile := splitPath(fromFileFull)
+		
+		for idx, toExt in (isObject(OutputExts) ? OutputExts : [OutputExts]) {
 			q := {}
 			q.idx				:= wQueue.length() + 1
-			q.id 				:= command q.idx
+			q.id				:= command q.idx
 			q.hostPID			:= dllCall("GetCurrentProcessId")
-			q.cmd 				:= command
+			q.cmd				:= command
 			q.cmdOpts			:= cmdOpts
-			q.workingDir 		:= fileFull.dir
-			q.outputFolder 		:= outputFolder ? outputFolder : ""
-			q.fromFile 			:= fileFull.file
-			q.fromFileExt		:= fileFull.ext
-			q.fromFileNoExt 	:= fileFull.noExt
-			q.fromFileFull		:= fromFileFull
-			if ( command <> "verify" && command <> "info" ) {
-				q.toFile		:= fileFull.noExt "." toExt
-				q.toFileExt 	:= toExt
-				q.toFileNoExt	:= fileFull.noExt								; For the target file, we use the same base filename as the source
-				q.toFileFull	:= outputFolder "\" fileFull.noExt "." toExt
-			}
-			q.createSubDir		:= createSubDir_checkbox
+			q.multiOutputTypes	:= OutputExts.length() > 1 ? 1:0 		; Multiple output types, change output filename and add to their own directories if called for	
 			q.deleteInputDir	:= deleteInputDir_checkbox
 			q.deleteInputFiles 	:= deleteInputFiles_checkbox
 			q.keepIncomplete 	:= keepIncomplete_checkbox
-			q.workingTitle 		:= (q.toFile ? q.toFile : q.fromFile)
+			q.workingDir		:= splitFromFile.dir
+			q.outputFolder		:= outputFolder ? outputFolder : q.workingDir
+			q.fromFileExt		:= splitFromFile.ext
+			q.fromFile			:= splitFromFile.file
+			q.fromFileNoExt 	:= splitFromFile.noExt
+			q.fromFileFull		:= fromFileFull
+			if ( command <> "verify" && command <> "info" ) {
+				q.toFileExt 	:= toExt
+				q.toFileNoExt	:= q.multiOutputTypes ? splitFromFile.noExt " (" stringUpper(toExt) ")" : splitFromFile.noExt				; For the target file, we use the same base filename as the source
+				q.toFile		:= q.toFileNoExt "." toExt
+				q.toFileFull	:= q.outputFolder "\" q.toFile
+				q.createSubDir	:= createSubDir_checkbox ? q.outputFolder "\" q.toFileNoExt : false
+				q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
+			}
 			
-			wQueue.push(q)														; Push data to array
+			; If a duplicate filename was found (ie - 'D:\folder\gameX.chd' and 'C:\folderA\gameX.chd' would both output 'gameX.cue, gameX.bin') ...
+			; .. we will suffix a number to the filename gameX-1.chd and gameX-2.chd
+			for idx, obj in wQueue {
+				if ( obj.toFileFull == q.toFileFull ) {
+					dupFound[q.toFileFull] ? dupFound[q.toFileFull]++ : dupFound[q.toFileFull] := 2
+					msgbox, 36, % "Duplicate filename", % "A duplicate output filename was deteced (#" dupFound[q.toFileFull]-1 ")`n`nSource:`n'" q.fromFileFull "'`n`nDuplicate target:`n'" q.toFileFull "'`n`n`n[ YES ] to rename it`n[ NO ] to skip the conversion"
+					ifMsgBox Yes
+					{
+						q.toFileNoExt	:= q.multiOutputTypes ? splitFromFile.noExt " (" stringUpper(toExt) ") - " dupFound[q.toFileFull] : splitFromFile.noExt " - " dupFound[q.toFileFull]
+						q.toFile		:= q.toFileNoExt "." toExt
+						q.toFileFull	:= q.outputFolder "\" q.toFile
+						q.createSubDir	:= createSubDir_checkbox ? q.outputFolder "\" q.toFileNoExt : false
+						q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
+					}
+					ifMsgBox No 
+					{
+						dupFound[q.toFileFull]--
+						q := ""
+					}
+					break
+				}
+			}
+			if ( q )
+				wQueue.push(q) ; Push data to array
 		}
 	}
+	
 	return wQueue
 }
 
@@ -1566,8 +1635,25 @@ ini(job="read", var:="")
 
 playSound() 
 {
-	SoundBeep, 300, 100
-	SoundBeep, 600, 600
+	if ( inStr(A_OSVersion, "10") || inStr(A_OSVersion, "11") )
+		play := [a_WinDir "\Media\Alarm05.wav", 1]
+	else if ( inStr(A_OSVerson, "7") )
+		play := [a_WinDir "\Media\notify.wav", 2, "wait"]
+	
+	if ( play ) {
+		loop % play[2] {
+			soundPlay, % play[1], % play[3]
+			if ( play[2] > 1 )
+				sleep 100
+		}
+	}
+	else {
+		SoundBeep, 300, 200
+		SoundBeep, 600, 800
+		sleep 500
+		SoundBeep, 300, 200
+		SoundBeep, 600, 800
+	}
 }
 
 
@@ -2102,7 +2188,7 @@ URLDownloadToVar(url){
 }
 
 
-checkForUpdates(arg1:="", userClicked:=false) 
+checkForUpdates(arg1:="", userClick:=false) 
 {
 	global currentAppVersion, mainAppName, githubRepoURL
 	gui 4:+OwnDialogs
@@ -2110,7 +2196,7 @@ checkForUpdates(arg1:="", userClicked:=false)
 	log("Checking for updates ... ")
 	
 	if ( !a_isCompiled ) {
-	 	if ( userClicked )
+	 	if ( userClick )
 			msgbox 16, % "Error", % "Can only update compiled binaries"
 		log("Error updating: Can only update compiled binaries")  ; no time-stamp
 		return
@@ -2137,39 +2223,38 @@ checkForUpdates(arg1:="", userClicked:=false)
 		log("Error updating: Update info invalid")
 		
 	else {
-		newVersion := strReplace(obj.tag_name, "namDHCv", "")
-		
+		newVersion := regExReplace(obj.tag_name, "namDHC|v", "")
+
 		if ( newVersion == currentAppVersion ) {
-			if ( userClicked )
-				msgbox 64, % "No new updates found", % "You are running the latest version"
 			log("No new updates found. You are running the latest version")
+			if ( userClick )
+				msgbox 64, % "No new updates found", % "You are running the latest version"
 			return
 		}
 		
 		else if ( newVersion < currentAppVersion ) {
-			if ( userClicked )
-				msgbox 16, % "Error", % "Your version is newer then the latest release!`n`nCurrent version: v" currentAppVersion " - Latest version: " newVersion
-			log("Your version is newer then the latest release!  Current version: v" currentAppVersion " - Latest version: " newVersion)
+			log("Your version is newer then the latest release!  Current version: v" currentAppVersion " - Latest version: v" newVersion)
+			if ( userClick )
+				msgbox 16, % "Error", % "Your version is newer then the latest release!`n`nCurrent version: v" currentAppVersion " - Latest version: v" newVersion
 		}
 		
 		else if ( newVersion > currentAppVersion ) {
 			log("An update was found: v" newVersion)
-			msgBox, 68, % "Update available", % "A new version of " mainAppName " is available!`n`nCurrent version: v" currentAppVersion "`nLatest version: v" newVersion "`n`nChanges:`n" strReplace(obj.body, "-", "    -") "`n`nDo you want to update?"
-			
-			ifmsgBox No
-			{
+			msgBox, 36, % "Update available", % "A new version of " mainAppName " is available!`n`nCurrent version: v" currentAppVersion "`nLatest version: v" newVersion "`n`nChanges:`n" strReplace(obj.body, "-", "    -") "`n`nDo you want to update?"
+			ifMsgBox No
 				return
-			}
 			
 			for idx, asset in obj.assets {
 				if ( inStr(asset.browser_download_url, "namDHC.exe") )
 					namDHCBinURL := asset.browser_download_url
 				if ( inStr(asset.browser_download_url, "chdman.exe") )
 					chdmanBinURL := asset.browser_download_url
+				if ( inStr(asset.browser_download_url, ".zip") )
+					chdmanBinURL := asset.browser_download_url	
 			}
 			if ( !namDHCBinURL ) {
-				msgbox 16, % "Error", % "Error downloading update!"
-				log("Error updating: Update binary couldn't be found in the repo!")
+				msgbox 16, % "Error", % "Update not found!"
+				log("Error updating: Update binary couldn't be found in github repo!")
 				return
 			}
 			
