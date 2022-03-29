@@ -38,18 +38,76 @@ sendData.log := "Starting " stringUpper(recvData.cmd) " job - " recvData.working
 sendData.progressText := "Starting job -  " recvData.workingTitle
 thread_sendData()	
 
-if ( recvData.outputFolder && fileExist(recvData.outputFolder) <> "D" )
-	thread_createParentDir(recvData.outputFolder)
-if ( recvData.createSubDir )
-	thread_createSubDir(recvData.createSubDir)
+if ( recvData.outputFolder && fileExist(recvData.outputFolder) <> "D" ) {
+	if ( dir := thread_createDir(recvData.outputFolder) ) {
+		recvData.outputFolder := dir
+		thread_log("Created parent directory: " dir "`n")
+	}
+}
 
+if ( recvData.createSubDir ) {
+	if ( dir := thread_createDir(recvData.createSubDir) ) {
+		recvData.outputFolder := dir						
+		recvData.toFileFull := dir "\" recvData.toFile
+		thread_log("Created " dir "`nOutput directory set to: " recvData.outputFolder)
+	}
+}
 
-fromFile := recvData.fromFileFull ? (inStr(recvData.fromFileFull, a_space)? """" recvData.fromFileFull """" : recvData.fromFileFull) : ""
+if ( recvData.fromFileExt == "zip" ) {
+	if ( createDir := createFolder(mainTempDir "\" recvData.fromFileNoExt) ) {
+		deleteTempZip := createDir
+		
+		sendData.status := "unzipping"
+		sendData.log := "Unzipping '" recvData.fromFileFull "'"
+		sendData.progressText := "Unzipping  -  " recvData.fromFile
+		sendData.progress := 0
+		thread_sendData()
+		thread_log("Unzipping '" recvData.fromFileFull "'`nUnzipping to: '" createDir "'")
+		
+		if ( unzip(recvData.fromFileFull, createDir) ) {
+			Loop, Files, % createDir "\*.*", FR
+			{
+				f := splitPath(a_LoopFileLongPath)
+				if ( inArray(f.ext, recvData.inputFileTypes) ) {
+					fromFile := f.full ? (inStr(f.full, a_space)? """" f.full """" : f.full) : ""
+					sendData.status := "unzipping"
+					sendData.log := "Unzipped '" recvData.fromFileFull "'  -->  '" f.full "' successfully"
+					sendData.report := "Unzipped '" recvData.fromFileFull "' to '" f.file "' successfully`n"
+					sendData.progressText := "Unzipped successfully  -  " recvData.fromFile
+					sendData.progress := 0
+					thread_sendData()
+					break  ; Use only the first file found in the zip temp dir
+				}
+			}
+			if ( !fromFile )
+				error := ["Job halted - Error finding unzipped files", "Error finding unzipped files"]
+		}
+		else 
+			error := ["Job halted - Error unzipping file '" recvData.fromFileFull "'", "Error unzipping file  -  " recvData.fromFileFull]
+	}
+	else
+		error := ["Job halted - Error creating temporary directory '" mainTempDir "\" recvData.fromFileNoExt "'", "Error creating temp directory"]
+	
+	if ( error ) {
+		sendData.status := "error"
+		sendData.log := error[1]
+		sendData.report := "`n" error[1] "`n"
+		sendData.progressText := error[2]
+		sendData.progress := 100
+		thread_sendData()
+		thread_finishJob()
+		exitApp
+	}
+}
+else
+	fromFile := recvData.fromFileFull ? (inStr(recvData.fromFileFull, a_space)? """" recvData.fromFileFull """" : recvData.fromFileFull) : ""
+
 toFile := recvData.toFileFull ? (inStr(recvData.toFileFull, a_space)? """" recvData.toFileFull """" : recvData.toFileFull) : ""
+
 cmdLine := chdmanLocation . " " . recvData.cmd . recvData.cmdOpts . " -v" . (fromFile ? " -i " fromFile : "") . (toFile ? " -o " toFile : "")
 thread_log("`nCommand line: " cmdLine "`n`n") 
 
-setTimer, thread_chdmanTimeout, % "-" (chdmanTimeoutTimeSec*1000)
+setTimer, thread_chdmanTimeout, % "-" (chdmanTimeoutTimeSec*1000) 						; Set timeout timer
 output := runCMD(cmdLine, recvData.workingDir, "CP0", "thread_parseCHDMANOutput")
 setTimer, thread_chdmanTimeout, off
 
@@ -60,22 +118,18 @@ if ( rtnError := thread_checkForErrors(output.msg) ) {
 	sendData.progressText := regExReplace(sendData.log, "`n|`r", "") " -  " recvData.workingTitle
 	sendData.progress := 100
 	thread_sendData()
-		
+
 	if ( !recvData.keepIncomplete && !inStr(rtnError, "file already exists")  )			; Delete incomplete output files
 		thread_deleteIncompleteFiles(recvData.toFileFull)
-	
-	thread_finishJob()										; File already exists and we arent verifying the newly created CHD, so lets quit
+
+	thread_finishJob()
 	exitApp
 }
 
+
+
 ; No errors were detected
-
-
-
-; Delete input files if requested
-if ( recvData.deleteInputFiles )
-	thread_deleteInputFilesAfter(recvData.fromFileFull) 	
-
+; -----------------------
 
 ; CHDMAN was successful
 sendData.status := "success"
@@ -197,7 +251,7 @@ thread_parseCHDMANOutput(data, lineNum, cPID)
 	return data
 }
 	
-	
+
 /*
  Send a message to host
 ---------------------------------------------------------------------------------------
@@ -234,10 +288,12 @@ Recieve messages from host
 		q.cmdOpts 		 - (string)  The options (with parameters) to pass along to chdman
 		q.workingDir 	 - (string)  The input working directory
 		q.fromFile 		 - (string)  Input filename without path
+		q.fromFileExt	 - (string)  Input file extension
 		q.fromFileNoExt  - (string)  Input filename without path or extension
 		q.fromFileFull 	 - (string)  Input filename with full path and extension
 		q.outputFolder 	 - (string)  The output folder where files will be saved
 		q.toFile 		 - (string)  Output filename without path
+		q.toFileExt		 - (string)  Output file extension
 		q.toFileNoExt 	 - (string)  Output filename without path or extension
 		q.toFileFull 	 - (string)  Output filename with full path and extension
 		q.fileDeleteList - (array)   Files set to be deleted after job has completed
@@ -328,7 +384,7 @@ thread_deleteIncompleteFiles(file)
 	
 ; Delete input files after a successful completeion of CHDMAN (if specified in options)
 ; -----------------------------------------------------------------------------------------
-thread_deleteInputFilesAfter(delfile) 
+thread_deleteFromCUE(delfile) 
 {
 	global sendData, recvData
 	
@@ -361,21 +417,27 @@ thread_deleteInputFilesAfter(delfile)
 	sendData.report := sendData.log "`n"
 	thread_log(sendData.log "`n")
 	thread_sendData()
-	
-	if ( recvData.deleteInputDir ) {
-		if ( !dllCall("Shlwapi\PathIsDirectoryEmpty", "Str", recvData.workingDir) )
-			sendData.log := "Error deleting directory - Not empty '" recvData.workingDir "'"
-		else 
-			sendData.log := folderDelete(recvData.workingDir, 5) ? "Deleted directory '" recvData.workingDir "'" : "Error deleting directory '" recvData.workingDir "'"
-		sendData.report := sendData.log "`n"
-		thread_log(sendData.log "`n")
-		thread_sendData()
-	}
 }
+
+thread_deleteDir(dir, delAll:=0) 
+{
+	if ( !delAll && !dllCall("Shlwapi\PathIsDirectoryEmpty", "Str", dir) )
+		sendData.log := "Error deleting directory '" dir "' - Not empty"
+	else 
+		sendData.log := folderDelete(dir, 5, 100, delAll) ? "Deleted directory '" dir "'" : "Error deleting directory '" dir "'"
+	sendData.report := sendData.log "`n"
+	
+	sendData.progressText := "Deleting files"
+	sendData.progress := 100
+	thread_sendData()
+	
+	thread_log(sendData.log "`n")
+}
+
 	
 ; Create parent output folder
 ;---------------------------------------------------------------------------------------
-thread_createParentDir(newFolder) 
+thread_createDir(newFolder) 
 {
 	global recvData, sendData
 	
@@ -384,17 +446,16 @@ thread_createParentDir(newFolder)
 	
 	createThisDir := createFolder(newFolder)
 	if ( createThisDir ) {
-		recvData.outputFolder := createThisDir
-		sendData.status := "createParentDir"
-		sendData.log := "Output directory '" createThisDir "' created"
-		sendData.report := "Output directory '" createThisDir "' created`n"
+		sendData.status := "createDir"
+		sendData.log := "'" createThisDir "' created"
+		sendData.report := "'" createThisDir "' created`n"
 		thread_sendData()
-		return true
+		return createThisDir
 	}
 	else {
 		sendData.status := "error"
-		sendData.log := "Error creating main output directory '" recvData.outputFolder "'"
-		sendData.report := "`nError creating main output directory '" recvData.outputFolder "'`n"
+		sendData.log := "Error creating directory '" newFolder "'"
+		sendData.report := "`nError creating directory '" newFolder "'`n"
 		thread_log(sendData.log "`n")
 		thread_sendData()
 		thread_finishJob()
@@ -404,36 +465,25 @@ thread_createParentDir(newFolder)
 }
 	
 	
-; Create a new subdirectory if asked 
-;---------------------------------------------------------------------------------------
-thread_createSubDir(newFolder) 
-{
-	global sendData, recvData
-	
-	if ( !newFolder )
-		return false
-	
-	createThisDir := createFolder(newfolder)				 ; createThisDir() returns the full path if successfully created
-	if ( createThisDir ) {
-		recvData.outputFolder := createThisDir						
-		recvData.toFileFull := createThisDir "\" recvData.toFile
-		return true
-	}
-	else {
-		sendData.status := "error"
-		sendData.log := "Error creating Sub-directory '" newfolder "'"
-		sendData.report := "Error creating Sub-directory '" newfolder "'`n"
-		thread_sendData()
-	}
-	return false
-}
 
 
 ; Finish the job
 ; ----------------
 thread_finishJob() 
 {
-	global sendData
+	global recvData, sendData, deleteTempZip
+	
+	; Delete input files if requested
+	if ( recvData.deleteInputFiles )
+		thread_deleteFromCUE(recvData.fromFileFull)
+
+	if ( recvData.deleteInputDir )
+		thread_deleteDir(recvData.workingDir)	
+
+	if ( deleteTempZip ) {
+		
+		thread_deleteDir(deleteTempZip, 1)
+	}
 	
 	sendData.status := "finished"
 	sendData.report .= "`n`n"

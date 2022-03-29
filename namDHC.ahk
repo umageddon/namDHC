@@ -9,6 +9,8 @@ SetMouseDelay, -1
 SetDefaultMouseSpeed, 0
 SetWinDelay, -1
 SetControlDelay, -1
+SetWorkingDir %a_ScriptDir%
+
 
 /*
 v1.00
@@ -40,7 +42,7 @@ v1.05
 	- Fixed JSON issues
 	- Bug fixes
 	
- v1.06
+v1.06
 	- Allows creation of multiple output filetypes during a single job.
 	  Filetypes will be added to the file and directory names in parenthesis.
 	  Example of files from a PSX game with both TOC and CUE types selected for output:
@@ -54,6 +56,11 @@ v1.05
 	- Updater wont automatically update even when selecting no
 	- Bugfixes, GUI changes n' stuff
 	
+v1.07
+	- Added zip support. Multiple filetypes within the zipfile is unsupported at this time
+	- Fixed: namDHC won't ask about duplicate output files when verifying or getting info from CHD's
+	- Fixed: Selecting input types that weren't selected
+	- Minor GUI changes
 */
 
 #Include SelectFolderEx.ahk
@@ -66,9 +73,10 @@ onExit("quitApp", 1)
 
 ; Default global values 
 ; ---------------------
-currentAppVersion := "1.06"
+currentAppVersion := "1.07"
 checkForUpdatesAtStartup := "yes"
 chdmanLocation := a_scriptDir "\chdman.exe"
+mainTempDir := a_Temp "\namDHC"
 chdmanVerArray := ["0.236", "0.237", "0.238", "0.239", "0.240"]
 githubRepoURL := "https://api.github.com/repos/umageddon/namDHC/releases/latest" 
 mainAppName := "namDHC"
@@ -76,10 +84,9 @@ mainAppNameVerbose := mainAppName " - Verbose"
 runAppName := mainAppName " - Job"
 runAppNameChdman := runAppName " - chdman"
 runAppNameConsole := runAppName " - Console"
-jobTimeoutSec := 3
+jobTimeoutSec := 5
 chdmanTimeoutTimeSec := 5
 waitTimeConsoleSec := 15
-chdmanOptionMaxPerSide := 9
 jobQueueSize := 3
 jobQueueSizeLimit := 10
 outputFolder := a_workingDir
@@ -94,20 +101,12 @@ verboseWinPosY := 150
 mainWinPosX := 800
 mainWinPosY := 100
 
+globals := {}
+
 ; Read ini to write over global variables if changed previously
-ini("read", ["jobQueueSize"
-			,"outputFolder"
-			,"showJobConsole"
-			,"showVerboseWin"
-			,"playFinishedSong"
-			,"removeFileEntryAfterFinish"
-			,"mainWinPosX"
-			,"mainWinPosY"
-			,"verboseWinPosW"
-			,"verboseWinPosH"
-			,"verboseWinPosX"
-			,"verboseWinPosY"
-			,"checkForUpdatesAtStartup"])
+ini("read" 
+	,["jobQueueSize","outputFolder","showJobConsole","showVerboseWin","playFinishedSong","removeFileEntryAfterFinish"
+	,"mainWinPosX","mainWinPosY","verboseWinPosW","verboseWinPosH","verboseWinPosX","verboseWinPosY","checkForUpdatesAtStartup"])
 
 if ( !fileExist(chdmanLocation) ) {
 	msgbox 16, % "Fatal Error", % "CHDMAN.EXE not found!`n`nMake sure the chdman executable is located in the same directory as namDHC and try again.`n`nThe following chdman verions are supported:`n" arrayToString(chdmanVerArray)
@@ -123,33 +122,30 @@ if ( a_args[1] == "threadMode" ) {
 	#include threads.ahk
 }
 
+
 ; Kill all processes so only one instance is running
 ;---------------------------------------------------
 killAllProcess()
 
-; Set working global variables
+
+; Set working job variables
 ; ----------------------------
 job := {workTally:{}, workQueue:[], scannedFiles:{}, queuedMsgData:[], InputExtTypes:[], OutputExtType:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
-GUI := { chdmanOpt:{}, dropdowns:{job:{}, media:{}}, buttons:{normal:[], hover:[], clicked:[], disabled:[]}, menu:{namesOrder:[], File:[], Settings:[], About:[]} }
 
 ; Set GUI variables
 ; -----------------
+GUI := { chdmanOpt:{}, dropdowns:{job:{}, media:{}}, buttons:{normal:[], hover:[], clicked:[], disabled:[]}, menu:{namesOrder:[], File:[], Settings:[], About:[]} }
+GUI.dropdowns.job := { 	 create: {pos:1,desc:"Create CHD files from media"}
+						,extract: {pos:2,desc:"Extract images from CHD files"}
+						,info: {pos:3, desc:"Get info from CHD files"}
+						,verify: {pos:4, desc:"Verify CHD files"}
+						,addMeta: {pos:5, desc:"Add metadata to CHD files"}
+						,delMeta: {pos:6, desc:"Delete metadata from CHD files"}}
+GUI.dropdowns.media :=	{ cd:"CD image", hd:"Hard disk image", ld:"LaserDisc image", raw:"Raw image" }
 
-GUI.dropdowns.job := { 	 create:{pos:1,desc:"Create CHD files from media"}
-						,extract:{pos:2,desc:"Extract images from CHD files"}
-						,info:{pos:3, desc:"Get info from CHD files"}
-						,verify:{pos:4, desc:"Verify CHD files"}
-						,addMeta:{pos:5, desc:"Add metadata to CHD files"}
-						,delMeta:{pos:6, desc:"Delete metadata from CHD files"}}
-	
-GUI.dropdowns.media :=	{ cd:"CD image"
-						 ,hd:"Hard disk image"
-						 ,ld:"LaserDisc image"
-						 ,raw:"Raw image" }
-
-GUI.buttons.default :=	{normal:[0, 0xFFCCCCCC, "", "", 3], 			hover:[0, 0xFFBBBBBB, "", 0xFF555555, 3], 	clicked:[0, 0xFFCFCFCF, "", 0xFFAAAAAA, 3], disabled:[0, 0xFFE0E0E0, "", 0xFFAAAAAA, 3] }
-GUI.buttons.cancel :=	{normal:[0, 0xFFFC6D62, "", "White", 3], 		hover:[0, 0xFFff8e85, "", "White", 3], 		clicked:[0, 0xFFfad5d2, "", "White", 3], 	disabled:[0, 0xFFfad5d2, "", "White", 3]}
-GUI.buttons.start :=	{normal:[0, 0xFF74b6cc, "", 0xFF444444, 3],	hover:[0, 0xFF84bed1, "", "White", 3], 		clicked:[0, 0xFFa5d6e6, "", "White", 3], 	disabled:[0, 0xFFd3dde0, "", 0xFF888888, 3] }	
+GUI.buttons.default :=	{normal:[0, 0xFFCCCCCC, "", "", 3], hover:[0, 0xFFBBBBBB, "", 0xFF555555, 3], clicked:[0, 0xFFCFCFCF, "", 0xFFAAAAAA, 3], disabled:[0, 0xFFE0E0E0, "", 0xFFAAAAAA, 3] }
+GUI.buttons.cancel :=	{normal:[0, 0xFFFC6D62, "", "White", 3], hover:[0, 0xFFff8e85, "", "White", 3], clicked:[0, 0xFFfad5d2, "", "White", 3], disabled:[0, 0xFFfad5d2, "", "White", 3]}
+GUI.buttons.start :=	{normal:[0, 0xFF74b6cc, "", 0xFF444444, 3],	hover:[0, 0xFF84bed1, "", "White", 3], clicked:[0, 0xFFa5d6e6, "", "White", 3], disabled:[0, 0xFFd3dde0, "", 0xFF888888, 3] }	
 
 ; Set menu variables
 ; -------------------
@@ -163,10 +159,9 @@ GUI.menu.Settings[4] :=	{name:"Show a console window for each new job",			gotola
 GUI.menu.Settings[5] :=	{name:"Play a sound when finished jobs",				gotolabel:"menuSelected",				saveVar:"playFinishedSong"}
 GUI.menu.Settings[6] :=	{name:"Remove entry from list when successful",			gotolabel:"menuSelected",				saveVar:"removeFileEntryAfterFinish"}
 
-
-; Set misc GUI variables
+; misc GUI variables
 ; -------------------------
-GUI.templateHDDropdownList :=  ""		; Hard drive template dropdown list
+GUI.HDtemplate := { ddList: ""		; Hard drive template dropdown list
 . "|Conner CFA170A  -  163MB||"
 . "Rodime R0201  -  5MB|"
 . "Rodime R0202  -  10MB|"
@@ -180,7 +175,8 @@ GUI.templateHDDropdownList :=  ""		; Hard drive template dropdown list
 . "Maxtor LXT-340S  -  376MB|"
 . "Maxtor MXT-540SL  -  733MB|"
 . "Micropolis 1528  -  1272MB|"
-
+, values : [0,1,2,3,4,5,6,7,8,9,10,11,12]}
+GUI.CPUCores := procCountDDList()
 
 /* 
 GUI CHDMAN options
@@ -212,8 +208,8 @@ GUI.chdmanOpt.inputStartHunk :=		{name: "inputstarthunk",	paramString: "ish",	de
 GUI.chdmanOpt.inputBytes :=			{name: "inputBytes",		paramString: "ib",	description: "Effective length of input (in bytes)", 		editField: 0}
 GUI.chdmanOpt.compression :=		{name: "compression",		paramString: "c",	description: "Compression codecs to use", 					editField: "cdlz,cdzl,cdfl"}
 GUI.chdmanOpt.inputHunks :=			{name: "inputhunks",		paramString: "ih",	description: "Effective length of input (in hunks)", 		editField: 0}
-GUI.chdmanOpt.numProcessors :=		{name :"numprocessors",		paramString: "np",	description: "Max number of CPU threads to use", 			dropdownOptions: procCountDDList()}
-GUI.chdmanOpt.template :=			{name: "template",			paramString: "tp",	description: "Hard drive template to use", 					dropdownOptions: GUI.templateHDDropDownList, dropdownValues:[0,1,2,3,4,5,6,7,8,9,10,11,12]}
+GUI.chdmanOpt.numProcessors :=		{name :"numprocessors",		paramString: "np",	description: "Max number of CPU threads to use", 			dropdownOptions: GUI.CPUCores}
+GUI.chdmanOpt.template :=			{name: "template",			paramString: "tp",	description: "Hard drive template to use", 					dropdownOptions: GUI.HDtemplate.ddList, dropdownValues:GUI.HDtemplate.values}
 GUI.chdmanOpt.chs :=				{name: "chs",				paramString: "chs",	description: "CHS Values [cyl, heads, sectors]", 			editField: "332,16,63"}
 GUI.chdmanOpt.ident :=				{name: "ident",				paramString: "id",	description: "Name of ident file for CHS info", 			editField: "filename.chs", useQuotes:true}
 GUI.chdmanOpt.size :=				{name: "size",				paramString: "s",	description: "Size of output file (in bytes)", 				editField: 0}
@@ -361,10 +357,10 @@ selectJob()
 			msgbox 64, % "", % "Option not implemented yet"
 	}
 	
-	guiCtrl({buttonStartJobs:newStartButtonLabel})	; New start button label
+	guiCtrl({buttonStartJobs:newStartButtonLabel})																									; New start button label to reflect new job
 	imageButton.create(startButtonHWND, GUI.buttons.start.normal, GUI.buttons.start.hover, GUI.buttons.start.clicked, GUI.buttons.start.disabled)	; Default button colors,  must be set after changing button text
 
-	guiCtrl("choose", {dropdownMedia:"|1"}) 	; Choose first item in media dropdown and fire the selection 
+	guiCtrl("choose", {dropdownMedia:"|1"}) 																										; Choose first item in media dropdown and fire the selection 
 }
 
 ; Media selection
@@ -372,7 +368,8 @@ selectJob()
 selectMedia()
 {
 	global
-	local mediaSel, key, opt, val, idx, optNum, checkOpt, changeOpt, x, y, yH, gPos, file
+	local mediaSel, key, opt, val, idx, optNum, checkOpt, changeOpt, changeOptVal, ctrlY, x, y, gPos, file
+	local optPerSide:=9, ctrlH:=25
 	
 	gui 1:submit, nohide
 	gui 1:+ownDialogs
@@ -405,12 +402,12 @@ selectMedia()
 		case "extractld":	job.InputExtTypes := ["chd"],						job.OutputExtTypes := ["raw"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.inputParent, GUI.chdmanOpt.inputStartFrame, GUI.chdmanOpt.inputFrames]
 		case "extracthd":	job.InputExtTypes := ["chd"],						job.OutputExtTypes := ["img"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.inputParent, GUI.chdmanOpt.inputStartByte, GUI.chdmanOpt.inputStartHunk, GUI.chdmanOpt.inputBytes, GUI.chdmanOpt.inputHunks]
 		case "extractraw":	job.InputExtTypes := ["chd"],						job.OutputExtTypes := ["img", "raw"],			job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.inputParent, GUI.chdmanOpt.inputStartByte, GUI.chdmanOpt.inputStartHunk, GUI.chdmanOpt.inputBytes, GUI.chdmanOpt.inputHunks]
-		case "createcd": 	job.InputExtTypes := ["cue", "toc", "gdi", "iso"],	job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.compression]
-		case "createld":	job.InputExtTypes := ["raw"],						job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.inputStartFrame, GUI.chdmanOpt.inputFrames, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.compression]
-		case "createhd":	job.InputExtTypes := ["img"],						job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.compression, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.size, GUI.chdmanOpt.inputStartByte, GUI.chdmanOpt.inputStartHunk, GUI.chdmanOpt.inputBytes, GUI.chdmanOpt.inputHunks, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.ident, GUI.chdmanOpt.template, GUI.chdmanOpt.chs, GUI.chdmanOpt.sectorSize]
-		case "createraw":	job.InputExtTypes := ["img", "raw"],				job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.inputStartByte, GUI.chdmanOpt.inputStartHunk, GUI.chdmanOpt.inputBytes, GUI.chdmanOpt.inputHunks, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.unitSize, GUI.chdmanOpt.compression]
-		case "info":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
-		case "verify":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
+		case "createcd": 	job.InputExtTypes := ["cue", "toc", "gdi", "iso", "zip"],	job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.compression]
+		case "createld":	job.InputExtTypes := ["raw", "zip"],						job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.inputStartFrame, GUI.chdmanOpt.inputFrames, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.compression]
+		case "createhd":	job.InputExtTypes := ["img", "zip"],						job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.compression, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.size, GUI.chdmanOpt.inputStartByte, GUI.chdmanOpt.inputStartHunk, GUI.chdmanOpt.inputBytes, GUI.chdmanOpt.inputHunks, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.ident, GUI.chdmanOpt.template, GUI.chdmanOpt.chs, GUI.chdmanOpt.sectorSize]
+		case "createraw":	job.InputExtTypes := ["img", "raw", "zip"],				job.OutputExtTypes := ["chd"],					job.Options := [GUI.chdmanOpt.force, GUI.chdmanOpt.deleteInputFiles, GUI.chdmanOpt.deleteInputDir, GUI.chdmanOpt.keepIncomplete, GUI.chdmanOpt.numProcessors, GUI.chdmanOpt.outputParent, GUI.chdmanOpt.inputStartByte, GUI.chdmanOpt.inputStartHunk, GUI.chdmanOpt.inputBytes, GUI.chdmanOpt.inputHunks, GUI.chdmanOpt.hunkSize, GUI.chdmanOpt.unitSize, GUI.chdmanOpt.compression]
+		case "info":		job.InputExtTypes := ["chd", "zip"],				job.OutputExtTypes := [],						job.Options := []
+		case "verify":		job.InputExtTypes := ["chd", "zip"],				job.OutputExtTypes := [],						job.Options := []
 		case "addmeta":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
 		case "delmeta":		job.InputExtTypes := ["chd"],						job.OutputExtTypes := [],						job.Options := []
 	}	
@@ -427,35 +424,38 @@ selectMedia()
 	if ( job.Options.length() )	{													
 		guiToggle("show", "groupboxOptions")
 		gPos := guiGetCtrlPos("groupboxOptions")														; Assign x & y values to groupbox x & y positions
-		idx := 0, yH := 0, x := gPos.x+10, y := gPos.y										
+		idx := 0, ctrlY := 0, x := gPos.x+10, y := gPos.y										
 		
 		for optNum, opt in job.Options {																; Show appropriate options according to selected type of job and media type
 			if ( !opt || opt.hidden )
 				continue
 			
-			if ( opt.hasKey("editField") )																; The option can ONLY have either a dropdown or editfield
-				changeOpt := opt.name "_edit"
-			else if ( opt.hasKey("dropdownOptions") )
-				changeOpt := opt.name "_dropdown"
-			checkOpt := opt.name "_checkbox"
-
-			if ( idx == chdmanOptionMaxPerSide )														; We've run out of vertical room to show more chdman options so new options go into next column
-				x += 400, y := gPos.y, yH := 1, idx := 0									
+			if ( idx == optPerSide )																	; We've run out of vertical room to show more chdman options so new options go into next column
+				x += 400, y := gPos.y, ctrlY := 1, idx := 0												; Set initial control/checkbox positions
 			else 
-				yH++, idx++
+				ctrlY++, idx++																			; Add to Y position for next control
 			
-			guiCtrl({(changeOpt):inStr(changeOpt,"dropdown") ? opt.dropdownOptions : opt.editField})	; Populate option dropdown list from GUI.chdmanOpt array	
+			checkOpt := opt.name "_checkbox"
 			guiCtrl({(checkOpt):" " (opt.description? opt.description : opt.name)}) 					; Label the checkbox -- Default to using the chdman opt.name parameter if no description
-			guiCtrl("moveDraw", {(checkOpt):"x" x + (opt.xInset? opt.xInset:0) " y" y+(yH*25), (changeOpt):"x" x+210 " y" y +(yH*25)-3})	; Move the chdman option editbox or dropdown control into place and Move the checkbox into place
+			guiCtrl("moveDraw", {(checkOpt):"x" x + (opt.xInset? opt.xInset:0) " y" y+(ctrlY*ctrlH)})	; Move the chdman checkbox 
+			
+			if ( opt.hasKey("editField") ) {															; The option can have either a dropdown or editfield
+				changeOpt := opt.name "_edit"
+				guiCtrl({(changeOpt):opt.editField})													; Populate editfield from GUI.chdmanOpt array
+			}
+			else if ( opt.hasKey("dropdownOptions") ) {
+				changeOpt := opt.name "_dropdown"
+				guiCtrl({(changeOpt):opt.dropdownOptions})												; Populate option dropdown from GUI.chdmanOpt array
+			}
+			guiCtrl("moveDraw", {(changeOpt):"x" x+210 " y" y +(ctrlY*ctrlH)-3})						; Move the option editfield or dropdown into place
 			guiToggle("show", [checkOpt, changeOpt])													; Show the option and its coresponding editfield or dropdownlist
 		}
-		guiCtrl("moveDraw", {groupboxOptions:"h" ceil((optNum >9 ? 9 : optNum)*25)+30})					; Resize options groupbox height to fit all  options
+		guiCtrl("moveDraw", {groupboxOptions:"h" ceil((optNum >optPerSide ? optPerSide : optNum)*ctrlH)+30})	; Resize options groupbox height to fit all  options
 	}
 	else {																								; If no options to show for this selection ...
 		guiToggle("hide", "groupboxOptions")															; ... then hide the groupbox
 		guiCtrl("moveDraw", {groupboxOptions:"h0"})														; and resize the groupbox height for no options
 	}
-	
 	
 	; Reset extension menus
 	; ---------------------
@@ -606,6 +606,7 @@ menuExtHandler(init:=false)
 		
 			case "InputExtTypes": 
 				menu, InputExtTypes, Togglecheck, % a_ThisMenuItem		; Toggle checking item
+				
 		}
 		
 		for idx, val in job[a_ThisMenu]
@@ -620,7 +621,8 @@ menuExtHandler(init:=false)
 	}
 	
 	for idx, type in ["InputExtTypes", "OutputExtTypes"]				; Rerdraw text lists in the GUI
-		guiCtrl({(type) "Text": arrayToString(job["selected" type])})				
+		guiCtrl({(type) "Text": arrayToString(job["selected" type])})
+
 }
 
 
@@ -641,7 +643,7 @@ addFolderFiles()
 	
 	switch ( a_GuiControl ) {
 		case "buttonAddFiles":
-			for idx, ext in job.InputExtTypes
+			for idx, ext in job.selectedInputExtTypes
 				extList .= "*." ext ";"
 			fileSelectFile, newInputList, M3, % "::{20d04fe0-3aea-1069-a2d8-08002b30309d}", % "Select files", % extList
 			if ( !errorLevel )
@@ -654,28 +656,56 @@ addFolderFiles()
 				}
 		
 		case "buttonAddFolder":
-			inputFolder := selectFolderEx("", "Select a folder containing " arrayToString(job.InputExtTypes) " type files.", winExist(mainAppName))
+			inputFolder := selectFolderEx("", "Select a folder containing " arrayToString(job.selectedInputExtTypes) " type files.", winExist(mainAppName))
 			if ( inputFolder.SelectedDir ) {
 				inputFolder := regExReplace(inputFolder.SelectedDir, "\\$")
-				for idx, thisExt in job.InputExtTypes {
+				
+				for idx, thisExt in job.selectedInputExtTypes {
 					loop, Files, % inputFolder "\*." thisExt, FR 
 						newFiles.push(a_LoopFileLongPath)
 				}
 			}
 	}
 	
+
 	if ( newFiles.length() ) {
 		gui 1: listView, listViewInputFiles
+			
 		for idx, thisFile in newFiles {
-			if ( !inArray(thisFile, job.scannedFiles[job.Cmd]) ) {
-				numAdded++
-				log("Adding '" thisFile "'")
-				SB_SetText("Adding '" thisFile "'", 1, 1)
-				LV_add("", thisFile)
-				job.scannedFiles[job.Cmd].push(thisFile)
-			} else  {
+			fileParts := splitPath(thisFile)
+			
+			if ( !inArray(fileParts.ext, job.selectedInputExtTypes) ) {
+				log("Skip adding '" thisFile "' - Not a selected input filetype")
+				SB_SetText("Skip adding '" thisFile "' - Not a selected input filetype", 1)
+				continue
+			}
+			
+			if ( inArray(thisFile, job.scannedFiles[job.Cmd]) ) {
 				log("Skip adding '" thisFile "' - Already in queue")
 				SB_SetText("Skip adding '" thisFile "' - Already in queue", 1)
+				continue
+			}
+			
+			if ( fileParts.ext == "zip" ) { 	; If its a zipfile, check to see if user extensions are contained within it
+				addFile := false
+				showZipFile := ""
+				for idx, fileInZip in readZipFile(thisFile) {
+					ext := splitPath(fileInZip).ext
+					if ( inArray(ext, job.selectedInputExtTypes) && ext <> "zip" ) { 	; ONly add if file inzise zipfile is in the selected extension list and  it's not another zipfile within a zipfile
+						showZipFile .= fileInZip ", "
+						addFile := true
+						continue
+					}
+				}
+			} else addFile := true
+
+			if ( addFile ) {
+				numAdded++
+				msg := "Adding '" thisFile "'" (showZipFile ? "  ->  '" regExReplace(showZipFile, ", $", "") "'" : "")
+				log(msg)
+				SB_SetText(msg, 1, 1)
+				LV_add("", thisFile)
+				job.scannedFiles[job.Cmd].push(thisFile)
 			}
 		}
 		
@@ -822,39 +852,37 @@ checkboxOption(ctrl:="")
 buttonStartJobs()
 {
 	global
-	local fnMsg, runCmd, thisJob, gPos, y, dropdownCHDInfoList:="", file, filefull, dir, x1, x2, y
+	local fnMsg, runCmd, thisJob, gPos, y, file, filefull, dir, x1, x2, y, cmd, x, qsToDo
 	static CHDInfoFileNum
 	gui 1:submit, nohide
 	gui 1:+ownDialogs
 	
 	switch job.Cmd { 
 		case "createcd", "createhd", "createraw", "createld", "extractcd", "extracthd", "extractraw", "extractld":
-			SB_SetText("Creating work Queue" , 1)
-			log("Creating work queue")
-			job.workQueue := createjob(job.Cmd, job.Options, job.selectedOutputExtTypes, job.scannedFiles[job.Cmd], outputFolder)	; Create a queue (object) of files to process
-			if ( !job.workQueue || job.workQueue.count() == 0 ) {
-				log("No jobs found in the work queue")
-				msgbox, 16, % "Error", % "No jobs in the work queue!"
-				return
-			}
-				
+			SB_SetText("Creating " stringUpper(job.Cmd) " work queue" , 1)
+			log("Creating " stringUpper(job.Cmd) " work queue" )
+			job.workQueue := createjob(job.Cmd, job.Options, job.selectedOutputExtTypes, job.selectedInputExtTypes, job.scannedFiles[job.Cmd], outputFolder)	; Create a queue (object) of files to process
 		
 		case "verify":
-			job.workQueue := createjob("verify", "", "", job.scannedFiles["verify"])
+			SB_SetText("Verifying CHD's" , 1)
+			log("Starting Verify CHD's" )
+			job.workQueue := createjob("verify", "", "", job.selectedInputExtTypes, job.scannedFiles["verify"])
 		
 		case "info":
+			SB_SetText("Info for CHD's" , 1)
+			log("Getting info from CHD's" )
 			guiToggle("disable", "all")
 			CHDInfoFileNum := 1, x1 := 20, x2:= 150, y := 20
 			gui 3: destroy
 			gui 3: margin, 20, 20
-			gui 3: font, s12 Q5 w700 c000000
-			gui 3: add, text, x20 y%y% w500 vtextCHDInfoTitle, % ""
+			gui 3: font, s11 Q5 w750 c000000
+			gui 3: add, text, x20 y%y% w700 vtextCHDInfoTitle, % ""
 			y += 40
 			loop 12 {
 				gui 3: font, s9 Q5 w700 c000000
-				gui 3: add, text, x%x1% y%y% w100 vtextCHDInfoTextInfoTitle_%a_index%, % ""
+				gui 3: add, text, x%x1% y%y% w100 vtextCHDInfo_%a_index%, % ""
 				gui 3: font, s9 Q5 w400 c000000
-				gui 3: add, edit, x%x2% y+-13 w615 veditCHDInfoTextInfo_%a_index% readonly, % ""
+				gui 3: add, edit, x%x2% y+-13 w615 veditCHDInfo_%a_index% readonly, % ""
 				y += 23
 			}
 			y += 30
@@ -879,15 +907,15 @@ buttonStartJobs()
 			gui 3: font, s9 Q5 w400 c000000
 			gui 3: add, button, x20 w120 y%y% h30 gselectCHDInfo vbuttonCHDInfoLeft hwndbuttonCHDInfoPrevHWND disabled, % "< Prev file"
 			imageButton.create(buttonCHDInfoPrevHWND, GUI.buttons.default.normal, GUI.buttons.default.hover, GUI.buttons.default.clicked, GUI.buttons.default.disabled) ; Default button colors
-			
-			for idx, filefull in job.scannedFiles["info"]
-				dropdownCHDInfoList .= splitPath(filefull).file "|" ; Create CHD info dropdown list
 			y+=5
-			gui 3: add, dropdownlist, x160 y%y% w475 vdropdownCHDInfo gselectCHDInfo altsubmit, % regExReplace(dropdownCHDInfoList, "\|$")
+			gui 3: add, dropdownlist, x160 y%y% w475 vdropdownCHDInfo gselectCHDInfo altsubmit, % getDDCHDInfoList()
 			y-=5
 			gui 3: font, s9 Q5 w400 c000000
 			gui 3: add, button, x+15 y%y% w120 h30 gselectCHDInfo vbuttonCHDInfoRight hwndbuttonCHDInfoNextHWND,  % " Next file >"
 			imageButton.create(buttonCHDInfoNextHWND, GUI.buttons.default.normal, GUI.buttons.default.hover, GUI.buttons.default.clicked, GUI.buttons.default.disabled) ; Default button colors
+			gui 3: font, s12 Q5 w750 c000000
+			gui 3: add, text, x285 y350 w200 center border vtextCHDInfoLoading, % "`nLoading...`n"
+			gui 3: font, s9 Q5 w400 c000000
 			Gui 3:+LastFound +AlwaysOnTop +ToolWindow
 			gui 3:show, autosize, % "CHD Info"
 			
@@ -902,18 +930,19 @@ buttonStartJobs()
 						CHDInfoFileNum := dropdownCHDInfo
 				}
 				
-				guiCtrl({textCHDInfoTitle:"Loading..."}, 3) ; Change title to inidcate we are loading info
-				guiToggle("disable", "all", 3) ; Disable all elemnts while loading
-
-				if ( showCHDInfo(job.scannedFiles["info"][CHDInfoFileNum], 3) == false ) {
+				setTimer, showCHDInfoLoading, -1000 									; Show loading message and disable all elemnts while loading - only if loading is taking longer then normal
+				if ( showCHDInfo(job.scannedFiles["info"][CHDInfoFileNum], CHDInfoFileNum, job.scannedFiles["info"].length(), 3) == false ) { 	; Func returned nothing, clear the title
 					guiCtrl({textCHDInfoTitle:""})
+					guiToggle("hide", "textCHDInfoLoading", 3)
+					setTimer, showCHDInfoLoading, off
 					return
 				}
-
+				setTimer, showCHDInfoLoading, off
+				guiToggle("hide", "textCHDInfoLoading", 3) 								; Hide loading message
+				guiToggle("enable", ["dropdownCHDInfo", "buttonCHDInfoLeft", "buttonCHDInfoRight"], 3)		; Enable info elements
 				guiCtrl("choose", {dropdownCHDInfo:CHDInfoFileNum}, 3)					; Choose dropdown to match newly selected item in CHD info
 				controlFocus, ComboBox1, % "CHD Info"									; Keep focus on dropdown to allow arrow keys to also select next and previous files
 				
-				guiToggle("enable", ["dropdownCHDInfo", "buttonCHDInfoLeft", "buttonCHDInfoRight"], 3)		; Enable all info elements
 				if ( CHDInfoFileNum == 1 )												; Then disable the appropriate button according to selection number (first or last in list)
 					guiToggle("disable", "buttonCHDInfoLeft", 3)						
 				else if ( CHDInfoFileNum == job.scannedFiles["info"].length() )
@@ -929,9 +958,13 @@ buttonStartJobs()
 		case "delMeta":
 		case default:
 	}
-	if ( job.workQueue.length() == 0 )																							; Nothing to do!
-		return
 	
+	if ( !job.workQueue || job.workQueue.length() == 0 ) {																	; Nothing to do!
+		log("No jobs found in the work queue")
+		msgbox, 16, % "Error", % "No jobs in the work queue!"
+		return
+	}
+
 	msgData := [], thisJob := {}, availPSlots := []
 	job.workTally := {started:false, running:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:"", report:""}		; Set variables
 	workQueueSize := (job.workTally.total < jobQueueSize)? job.workTally.total : jobQueueSize								; If number of jobs is less then queue count, only display those progress bars
@@ -1128,9 +1161,9 @@ createMainGUI()
 	gui 1:add, button, 		x15 y83 w80 h22 vbuttonAddFiles gaddFolderFiles hwndGUIbutton2, % "Add files"
 	gui 1:add, button, 		x+5 y83 w90 h22 vbuttonAddFolder gaddFolderFiles hwndGUIbutton3, % "Add a folder"
 	
-	gui 1:add, text, 		x475 y93, % "Input file types: "
+	gui 1:add, text, 		x455 y93, % "Input file types: "
 	gui 1: font, Q5 s9 w700 c000000
-	gui 1:add, text, 		x+3 y93 w100 vInputExtTypesText, % ""
+	gui 1:add, text, 		x+3 y93 w130 vInputExtTypesText, % ""
 	gui 1: font, Q5 s9 w400 c000000
 	gui 1:add, button,		x663 y83 w130 h22 gbuttonExtSelect vbuttonInputExtType hwndGUIbutton1, % "Select input file types"
 	
@@ -1142,7 +1175,7 @@ createMainGUI()
 
 	gui 1:add, text, 		x15 y305, % "Output Folder"
 	gui 1:add, button, 		x15 y324 w90 vbuttonBrowseOutput geditOutputFolder hwndGUIbutton8, % "Select a folder"
-	gui 1:add, text, 		x475 y335,% "Output file types: "
+	gui 1:add, text, 		x455 y335,% "Output file types: "
 	gui 1: font, Q5 s9 w700 c000000
 	gui 1:add, text, 		x+3 y335 w75 vOutputExtTypesText, % ""
 	gui 1: font, Q5 s9 w400 c000000
@@ -1280,20 +1313,35 @@ showVerboseWindow(show:="yes")
 }
 
 
+getDDCHDInfoList()
+{
+	global job
+	for idx, filefull in job.scannedFiles["info"]
+		ddCHDInfoList .= splitPath(filefull).file "|" ; Create CHD info dropdown list
+	return regExReplace(ddCHDInfoList, "\|$")
+}
+
+showCHDInfoLoading() 
+{
+	guiToggle("disable", "all", 3) 
+	guiToggle("show", "textCHDInfoLoading", 3) 								; Show loading message
+}
+
+
 ; Show CHD info info seperate window
 ; -- grab new data 'JIT'
 ; ----------------------------------
-showCHDInfo(fullFileName, guiNum:=3)
+showCHDInfo(fullFileName, currNum, totalNum, guiNum:=3)
 {
 	global
 	local a, line, file, infoLineNum := 0, compressLineNum := 0, metadataTxt := ""
-	
+
 	if ( !fileExist(fullFileName) )
 		return false
 		
 	file := splitPath(fullFilename)
 	guiToggle("enable", "textCHDInfoTitle", guiNum)	
-	guiCtrl({"textCHDInfoTitle":file.file}, guiNum)																	; Change Title to filename
+	guiCtrl({"textCHDInfoTitle":"[" (currNum && totalNum ? currNum "/" totalNum "]  " : "") file.file}, guiNum)																	; Change Title to filename
 	loop, parse, % runCMD(chdmanLocation " info -v -i """ fullFilename """", file.dir).msg, % "`n"				; Loop through chdman 'info' stdOut
 	{
 		if ( a_index == 1 )																						; Skip first line of output
@@ -1310,9 +1358,9 @@ showCHDInfo(fullFileName, guiNum:=3)
 		else if ( inStr(line, ": ") ) {																			; Otherwise all data is part of file information
 			infoLineNum++																						; Increase line number counter
 			a := strSplit(line, ": ")																			; Split text into parts
-			guiToggle("enable", ["textCHDInfoTextInfoTitle_" infoLineNum, "editCHDInfoTextInfo_" infoLineNum], guiNum)
-			guiCtrl({("textCHDInfoTextInfoTitle_" infoLineNum):trim(a[1], " ") ": "}, guiNum)					; Add part 1 as subtitle (ie - "File name", "Size", "SHA1", etc)
-			guiCtrl({("editCHDInfoTextInfo_" infoLineNum):trim(a[2], " ")}, guiNum)								; Part 2 is the information itself 
+			guiToggle("enable", ["textCHDInfo_" infoLineNum, "editCHDInfo_" infoLineNum], guiNum)
+			guiCtrl({("textCHDInfo_" infoLineNum):trim(a[1], " ") ": "}, guiNum)					; Add part 1 as subtitle (ie - "File name", "Size", "SHA1", etc)
+			guiCtrl({("editCHDInfo_" infoLineNum):trim(a[2], " ")}, guiNum)								; Part 2 is the information itself 
 		}
 		else if ( line == "----------  -------  ------------------------------------" )							; When we find this string, we know we are in the overview Compression section
 			compressLineNum := 1																				; ... So flag it, use flag as the line counter and move to next loop
@@ -1461,7 +1509,7 @@ jobTimeoutTimer()
 
 ; Create  or add to the input files queue (return a work queue)
 ; -------------------------------------------------------
-createJob(command, theseJobOpts, OutputExts="", inputFiles="", outputFolder="") 
+createJob(command, theseJobOpts, outputExts="", inputExts:="", inputFiles="", outputFolder="") 
 {
 	global
 	local wQueue := [], dupFound := {}, idx, idx2, obj, thisOpt, optVal, cmdOpts := "", fromFileFull, splitFromFile, toExt, q
@@ -1487,7 +1535,7 @@ createJob(command, theseJobOpts, OutputExts="", inputFiles="", outputFolder="")
 	for idx1, fromFileFull in (isObject(inputFiles) ? inputFiles : [inputFiles]) {
 		splitFromFile := splitPath(fromFileFull)
 		
-		for idx, toExt in (isObject(OutputExts) ? OutputExts : [OutputExts]) {
+		for idx, toExt in (isObject(outputExts) ? outputExts : [outputExts]) {
 			q := {}
 			q.idx				:= wQueue.length() + 1
 			q.id				:= command q.idx
@@ -1495,6 +1543,7 @@ createJob(command, theseJobOpts, OutputExts="", inputFiles="", outputFolder="")
 			q.cmd				:= command
 			q.cmdOpts			:= cmdOpts
 			q.multiOutputTypes	:= OutputExts.length() > 1 ? 1:0 		; Multiple output types, change output filename and add to their own directories if called for	
+			q.inputFileTypes    := isObject(inputExts) ? inputExts : [""]
 			q.deleteInputDir	:= deleteInputDir_checkbox
 			q.deleteInputFiles 	:= deleteInputFiles_checkbox
 			q.keepIncomplete 	:= keepIncomplete_checkbox
@@ -1511,28 +1560,28 @@ createJob(command, theseJobOpts, OutputExts="", inputFiles="", outputFolder="")
 				q.toFileFull	:= q.outputFolder "\" q.toFile
 				q.createSubDir	:= createSubDir_checkbox ? q.outputFolder "\" q.toFileNoExt : false
 				q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
-			}
-			
-			; If a duplicate filename was found (ie - 'D:\folder\gameX.chd' and 'C:\folderA\gameX.chd' would both output 'gameX.cue, gameX.bin') ...
-			; .. we will suffix a number to the filename gameX-1.chd and gameX-2.chd
-			for idx, obj in wQueue {
-				if ( obj.toFileFull == q.toFileFull ) {
-					dupFound[q.toFileFull] ? dupFound[q.toFileFull]++ : dupFound[q.toFileFull] := 2
-					msgbox, 36, % "Duplicate filename", % "A duplicate output filename was deteced (#" dupFound[q.toFileFull]-1 ")`n`nSource:`n'" q.fromFileFull "'`n`nDuplicate target:`n'" q.toFileFull "'`n`n`n[ YES ] to rename it`n[ NO ] to skip the conversion"
-					ifMsgBox Yes
-					{
-						q.toFileNoExt	:= q.multiOutputTypes ? splitFromFile.noExt " (" stringUpper(toExt) ") - " dupFound[q.toFileFull] : splitFromFile.noExt " - " dupFound[q.toFileFull]
-						q.toFile		:= q.toFileNoExt "." toExt
-						q.toFileFull	:= q.outputFolder "\" q.toFile
-						q.createSubDir	:= createSubDir_checkbox ? q.outputFolder "\" q.toFileNoExt : false
-						q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
+				
+				; If a duplicate filename was found (ie - 'D:\folder\gameX.chd' and 'C:\folderA\gameX.chd' would both output 'gameX.cue, gameX.bin') ...
+				; .. we will suffix a number to the filename gameX-1.chd and gameX-2.chd
+				for idx, obj in wQueue {
+					if ( obj.toFileFull == q.toFileFull ) {
+						dupFound[q.toFileFull] ? dupFound[q.toFileFull]++ : dupFound[q.toFileFull] := 2
+						msgbox, 36, % "Duplicate filename", % "A duplicate output filename was deteced (#" dupFound[q.toFileFull]-1 ")`n`nSource:`n'" q.fromFileFull "'`n`nDuplicate target:`n'" q.toFileFull "'`n`n`n[ YES ] to rename it`n[ NO ] to skip the conversion"
+						ifMsgBox Yes
+						{
+							q.toFileNoExt	:= q.multiOutputTypes ? splitFromFile.noExt " (" stringUpper(toExt) ") - " dupFound[q.toFileFull] : splitFromFile.noExt " - " dupFound[q.toFileFull]
+							q.toFile		:= q.toFileNoExt "." toExt
+							q.toFileFull	:= q.outputFolder "\" q.toFile
+							q.createSubDir	:= createSubDir_checkbox ? q.outputFolder "\" q.toFileNoExt : false
+							q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
+						}
+						ifMsgBox No 
+						{
+							dupFound[q.toFileFull]--
+							q := ""
+						}
+						break
 					}
-					ifMsgBox No 
-					{
-						dupFound[q.toFileFull]--
-						q := ""
-					}
-					break
 				}
 			}
 			if ( q )
@@ -1729,8 +1778,6 @@ runCMD(CmdLine, workingDir:="", codepage:="CP0", Fn:="RunCMD_Output")
 ; ---------------------------------------------
 createFolder(newFolder) 
 {
-	
-	
 	if ( fileExist(newFolder) == "D" )	; Folder exists
 		createdFolder := newFolder
 	else {
@@ -1738,7 +1785,7 @@ createFolder(newFolder)
 			createdFolder := false
 		} else {												; Output folder is valid but dosent exist
 			fileCreateDir, % regExReplace(newFolder, "\\$")
-			createdFolder := errorLevel? false : newFolder
+			createdFolder := errorLevel ? false : newFolder
 		}
 	}
 	return createdFolder										; Returns the folder name if created or it exists, or false if no folder was created
@@ -1841,7 +1888,7 @@ procCountDDList()
 splitPath(inputFile) 
 {
 	splitPath inputFile, file, dir, ext, noext, drv
-	return {file:file, dir:dir, ext:ext, noext:noext, drv:drv}
+	return {full:inputFile, file:file, dir:dir, ext:ext, noext:noext, drv:drv}
 }
 
 
@@ -2135,10 +2182,13 @@ fileDelete(file, attempts:=5, sleepdelay:=200)
 
 ; Delete a folder
 ; ---------------
-folderDelete(dir, attempts:=5, sleepdelay:=200) 
+folderDelete(dir, attempts:=5, sleepdelay:=200, evenFull:=0) 
 {
+	if ( !dllCall("Shlwapi\PathIsDirectoryEmpty", "Str", dir) )
+	
 	loop % (attempts < 1 ? 1 : attempts) {
-		fileRemoveDir % dir, 0						; Attempt to delete the directory 5 times
+		
+		fileRemoveDir % dir, % evenFull				; Attempt to delete the directory 5 times
 		if ( errorLevel == 0 )						; Success
 			return true
 		sleep % sleepdelay
@@ -2188,9 +2238,11 @@ URLDownloadToVar(url){
 }
 
 
+; Check github for for newest assets
+; ----------------------------------
 checkForUpdates(arg1:="", userClick:=false) 
 {
-	global currentAppVersion, mainAppName, githubRepoURL
+	global currentAppVersion, mainAppName, githubRepoURL, mainTempDir
 	gui 4:+OwnDialogs
 	
 	log("Checking for updates ... ")
@@ -2213,17 +2265,23 @@ checkForUpdates(arg1:="", userClick:=false)
 	JSON := URLDownloadToVar(githubRepoURL)
 	obj := json2(JSON)
 	
-	if ( !isObject(obj) )
+	if ( !isObject(obj) ) {
 		log("Error updating: Update info invalid")
-	
-	else if ( obj.message && inStr(obj.message, "limit exceeded") )
+		if ( userClick )
+			msgbox 16, % "Error getting update info", % "Update info invalid"
+	}
+	else if ( obj.message && inStr(obj.message, "limit exceeded") ) {
 		log("Error updating: Github API limit exceeded")
-
-	else if ( !obj.tag_name )
+		if ( userClick )
+			msgbox 16, % "Error getting update info", % "Github API limit exceeded"
+	}
+	else if ( !obj.tag_name ) {
 		log("Error updating: Update info invalid")
-		
+		if ( userClick )
+			msgbox 16, % "Error getting update info", % "Update info invalid"
+	}	
 	else {
-		newVersion := regExReplace(obj.tag_name, "namDHC|v", "")
+		newVersion := regExReplace(obj.tag_name, "namDHC|v| ", "")
 
 		if ( newVersion == currentAppVersion ) {
 			log("No new updates found. You are running the latest version")
@@ -2258,12 +2316,11 @@ checkForUpdates(arg1:="", userClick:=false)
 				return
 			}
 			
-			tempDir := a_Temp "\namDHC"
-			fileTemp := tempDir "\namDHC.exe"
-			batchFile := tempDir "\update.bat"
+			fileTemp := mainTempDir "\namDHC.exe"
+			batchFile := mainTempDir "\update.bat"
 			batchText := "@timeout /t 1 /nobreak > NUL`r`n@del """ a_ScriptFullPath """ > NUL`r`n@copy """ fileTemp """ """ a_ScriptFullPath """ > NUL`r`n@start " a_ScriptFullPath "`r`n@exit 0`r`n"
 			
-			fileCreateDir, % tempDir
+			createFolder(mainTempDir)
 			fileDelete(fileTemp, 3, 50) 						; delete if temp file already exists
 			
 			urlDownloadToFile, % namDHCBinURL, % fileTemp
@@ -2294,4 +2351,39 @@ GuiClose()
 quitApp() 
 {
 	exitApp
+}
+
+
+Unzip(sZip, sUnz:="")
+{
+    try {
+		fso := ComObjCreate("Scripting.FileSystemObject")
+		If Not fso.FolderExists(sUnz)  ;http://www.autohotkey.com/forum/viewtopic.php?p=402574
+		   fso.CreateFolder(sUnz)
+		psh  := ComObjCreate("Shell.Application")
+		zippedItems := psh.Namespace( sZip ).items().count
+		psh.Namespace( sUnz ).CopyHere( psh.Namespace( sZip ).items, 4|16 )
+		Loop {
+			sleep 50
+			unzippedItems := psh.Namespace( sUnz ).items().count
+			IfEqual,zippedItems,%unzippedItems%
+				break
+		}
+		return true
+	}
+	catch e {
+		return false
+	}
+}
+
+
+readZipFile(zipFile) 
+{
+	if ( splitPath(zipFile).ext <> "zip" )
+		return false
+	array := []
+	zippedItem := ComObjCreate("Shell.Application").Namespace(zipFile)
+	for file, val in zippedItem.items
+		array.push(file.Name)
+	return array
 }
