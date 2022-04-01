@@ -35,15 +35,12 @@ sendData.report := stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" dr
 sendData.pid := dllCall("GetCurrentProcessId")
 sendData.progress := 0
 sendData.log := "Starting " stringUpper(recvData.cmd) " job - " recvData.workingTitle
-sendData.progressText := "Starting job -  " recvData.workingTitle
+sendData.progressText := "Starting job  -  " recvData.workingTitle
 thread_sendData()	
 
 if ( fileExist(recvData.outputFolder) <> "D" ) {
 	fileCreateDir, % recvData.outputFolder
 	thread_log("Created directory: " recvData.outputFolder "`n")
-	sendData.status := "creatingDir"
-	sendData.log := "Created directory: " recvData.outputFolder
-	thread_sendData()
 }
 
 if ( recvData.fromFileExt == "zip" ) {
@@ -67,7 +64,7 @@ if ( recvData.fromFileExt == "zip" ) {
 				if ( inArray(f.ext, recvData.inputFileTypes) ) {
 					recvData.fromFileFull := f.full
 					
-					fromFile := f.full ? (inStr(f.full, a_space)? """" f.full """" : f.full) : ""
+					fromFile := f.full ? """" f.full """"  : ""
 					
 					sendData.status := "unzipping"
 					sendData.log := "Unzipped " f.full " successfully"
@@ -100,9 +97,9 @@ if ( recvData.fromFileExt == "zip" ) {
 	}
 }
 else
-	fromFile := recvData.fromFileFull ? (inStr(recvData.fromFileFull, a_space)? """" recvData.fromFileFull """" : recvData.fromFileFull) : ""
+	fromFile := recvData.fromFileFull ? """" recvData.fromFileFull """" : ""
 
-toFile := recvData.toFileFull ? (inStr(recvData.toFileFull, a_space)? """" recvData.toFileFull """" : recvData.toFileFull) : ""
+toFile := recvData.toFileFull ? """" recvData.toFileFull """" : ""
 
 cmdLine := chdmanLocation . " " . recvData.cmd . recvData.cmdOpts . " -v" . (fromFile ? " -i " fromFile : "") . (toFile ? " -o " toFile : "")
 thread_log("`nCommand line: " cmdLine "`n`n") 
@@ -286,8 +283,6 @@ thread_sendData(msg:="")
 	sendData.log := ""
 	sendData.status := ""
 	sendData.report := ""
-	sendData.progress := ""
-	sendData.progressText := ""
 }
 	
 	

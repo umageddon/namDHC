@@ -1404,80 +1404,77 @@ receiveData(wParam, lParam)
 	global job
 
 	data := fromJSON(strGet( numGet(lParam + 2*A_PtrSize) ,, "utf-8"))
-	job.queuedMsgData.push(data)				; push data to queued messages
 	
 	job.msgData[data.pSlot] := data				; Assign globally so we can use anywhere in script - mainly to kill job and check on timeout activity
 	job.msgData[data.pSlot].timeout := 0		; Zero out timeout because we know this job is active
 	
-	parseMsgData()
+	parseMsgData(data)
 }
 	
 	
 	
 ; Parse data receieved from thread script 
 ; --------------------------------------
-parseMsgData()							; This is split from receieveData so parsing can be called in other parts of the script without having to receive data from thread
+parseMsgData(recvData)							; This is split from receieveData so parsing can be called in other parts of the script without having to receive data from thread
 {
 	global job, removeFileEntryAfterFinish
 	static report := []
 	
-	while ( job.queuedMsgData.length() > 0 ) {
-		
-		recvData := job.queuedMsgData.removeAt(1)
-		
-		if ( recvData.log )
-			log("Job " recvData.idx " - " recvData.log)
-		
-		if ( recvData.report )
-			report[recvData.idx] .= recvData.report		; Static variable adds to end report data
+	if ( recvData.log )
+		log("Job " recvData.idx " - " recvData.log)
+	
+	if ( recvData.report )
+		report[recvData.idx] .= recvData.report		; Static variable adds to end report data
 
-		switch recvData.status {
-			case "started":
-				job.workTally.running++
-			
-			case "success":
-				job.workTally.success++
-				SB_SetText("Job " recvData.idx " finished successfully!", 1)
-				if ( removeFileEntryAfterFinish == "yes" ) {
-					removeFromArray(recvData.fromFileFull, job.scannedFiles[recvData.cmd])
-					loop % LV_GetCount()												; Clear finished files from scanned files
-						if ( LV_GetText2(a_index) == recvData.fromFileFull )
-							LV_Delete(a_index)
-				}
-
-			case "fileExists":
-				job.workTally.skipped++
-				SB_SetText("Job " recvData.idx " skipped", 1)
-			
-			case "error":
-				job.workTally.withError++
-				SB_SetText("Job " recvData.idx " failed", 1)
-				
-			case "killed":
-				job.workTally.cancelled++
-				SB_SetText("Job " recvData.idx " cancelled", 1)
-			
-			case "halted":
-				job.workTally.cancelled += job.workQueue.length() + 1				; Tally up totals
-				job.workQueue := []											; Empty the work queue
-				job.workTally.haltedMsg := recvData.log						; Set flag and error log
-				log("Fatal Error. Halted all jobs")
-				
-			case "finished":
-				job.report .= report[recvData.idx]
-				report[recvData.idx] := ""
-				job.workTally.finished++
-				percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
-				guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
-				sleep 50
-				job.availPSlots.push(recvData.pSlot)										; Add an available slot to progress bar array
-		}
+	switch recvData.status {
+		case "started":
+			job.workTally.running++
 		
-		if ( recvData.progress <> "" )
-			guiControl,1:, % "progress" recvData.pSlot, % recvData.progress
-		if ( recvData.progressText )
-			guiControl,1:, % "progressText" recvData.pSlot, % recvData.progressText
+		case "fileExists":
+			job.workTally.skipped++
+			SB_SetText("Job " recvData.idx " skipped", 1)
+		
+		case "error":
+			job.workTally.withError++
+			SB_SetText("Job " recvData.idx " failed", 1)
+			
+		case "killed":
+			job.workTally.cancelled++
+			SB_SetText("Job " recvData.idx " cancelled", 1)
+		
+		case "halted":
+			job.workTally.cancelled += job.workQueue.length() + 1				; Tally up totals
+			job.workQueue := []											; Empty the work queue
+			job.workTally.haltedMsg := recvData.log						; Set flag and error log
+			log("Fatal Error. Halted all jobs")
+			
+		case "success":
+			job.workTally.success++
+			SB_SetText("Job " recvData.idx " finished successfully!", 1)
+			if ( removeFileEntryAfterFinish == "yes" ) {
+				removeFromArray(recvData.fromFileFull, job.scannedFiles[recvData.cmd])
+				loop % LV_GetCount()												; Clear finished files from scanned files
+					if ( LV_GetText2(a_index) == recvData.fromFileFull )
+						LV_Delete(a_index)
+			}
+		
+		case "finished":
+			job.report .= report[recvData.idx]
+			report[recvData.idx] := ""
+			job.workTally.finished++
+			percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
+			guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
+			sleep 50
+			job.availPSlots.push(recvData.pSlot)										; Add an available slot to progress bar array
 	}
+	
+	if ( recvData.progress <> "" )
+		guiControl,1:, % "progress" recvData.pSlot, % recvData.progress
+	if ( recvData.progressText ) {
+		guiControl,1:, % "progressText" recvData.pSlot, % recvData.progressText
+		;log("PSLOT[" recvData.pSlot "] -> " recvData.progressText)
+	}
+	
 }
 
 
@@ -1500,13 +1497,13 @@ jobTimeoutTimer()
 			job.msgData[a_index].progress := 100
 			job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
 			job.queuedMsgData.push(job.msgData[a_index])
-			parseMsgData()
+			parseMsgData(job.msgData[a_index])
 			
 			job.msgData[a_index].log := ""								; Update job.msgData[] again, 
 			job.msgData[a_index].report := ""
 			job.msgData[a_index].status := "finished"					; Assign "finished" flag
 			job.queuedMsgData.push(job.msgData[a_index])				; Queue the data and parse it
-			parseMsgData()
+			parseMsgData(job.msgData[a_index])
 			return true
 		}
 	}
@@ -1521,7 +1518,7 @@ jobTimeoutTimer()
 createJob(command, theseJobOpts, outputExts="", inputExts:="", inputFiles="", outputFolder="") 
 {
 	global
-	local wQueue := [], dupFound := {}, idx, idx2, obj, thisOpt, optVal, cmdOpts := "", fromFileFull, splitFromFile, toExt, q, PID := dllCall("GetCurrentProcessId")
+	local wCount :=0, wQueue := [], dupFound := {}, idx, idx2, obj, thisOpt, optVal, cmdOpts := "", fromFileFull, splitFromFile, toExt, q, PID := dllCall("GetCurrentProcessId")
 
 	gui 1:submit, nohide
 	
@@ -1545,7 +1542,8 @@ createJob(command, theseJobOpts, outputExts="", inputExts:="", inputFiles="", ou
 		splitFromFile := splitPath(fromFileFull)
 		
 		for idx, toExt in (isObject(outputExts) ? outputExts : [outputExts]) {
-			q := {}
+			
+			q := {}				
 			q.idx				:= wQueue.length() + 1
 			q.id				:= command q.idx
 			q.hostPID			:= PID
@@ -1590,12 +1588,10 @@ createJob(command, theseJobOpts, outputExts="", inputExts:="", inputFiles="", ou
 				}
 			}
 			q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
-		
-			if ( q.count() > 0 )
-				wQueue.push(q) ; Push data to array
-				
+			wQueue.push(q) ; Push data to array
 		}
 	}
+	msgbox % q.idx " --- " wQueue.length()
 	return wQueue
 }
 
