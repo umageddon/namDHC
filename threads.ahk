@@ -393,7 +393,6 @@ thread_deleteIncompleteFiles(file)
 	}
 	sendData.log := delFiles ? "Deleted incomplete file(s): " regExReplace(delFiles, " ,$") : "Error deleting incomplete file(s)!"
 	sendData.report := sendData.log "`n"
-	sendData.progressText := delFiles ? "Deleted incomplete file(s)" : ""
 	sendData.progress := 100
 	thread_log(sendData.log "`n")
 	thread_sendData()
@@ -420,7 +419,6 @@ thread_deleteFiles(delfile)
 	}
 	
 	sendData.status := "deleting"
-	sendData.progressText := "Deleting files and directories"
 	sendData.progress := 100
 	sendData.log := ""
 	if ( log )

@@ -65,7 +65,7 @@ v1.07
 	- Fixed Folder and file browsing shows input extensions that aren't actually selected
 	- Fixed GDI/CUE/TOC file read function is more robust
 	- Fixed timeout monitoring
-	- Fixed (?) Race condition receiving messages
+	- Fixed some race conditions
 	- Changed error handling for output chd files that already exist
 	- Minor GUI changes
 */
@@ -92,7 +92,7 @@ mainAppNameVerbose := mainAppName " - Verbose"
 runAppName := mainAppName " - Job"
 runAppNameChdman := runAppName " - chdman"
 runAppNameConsole := runAppName " - Console"
-timeoutSec := 15
+timeoutSec := 20
 waitTimeConsoleSec := 15
 jobQueueSize := 3
 jobQueueSizeLimit := 10
@@ -137,7 +137,7 @@ killAllProcess()
 
 ; Set working job variables
 ; ----------------------------
-job := {workTally:{}, report:"", started:false, msgData:[], availPSlots:[], workQueue:[], scannedFiles:{}, queuedMsgData:[], InputExtTypes:[], OutputExtType:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
+job := {workTally:{}, msgData:[], availPSlots:[], workQueue:[], scannedFiles:{}, queuedMsgData:[], InputExtTypes:[], OutputExtType:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
 
 ; Set GUI variables
 ; -----------------
@@ -1005,13 +1005,14 @@ buttonStartJobs()
 	onMessage(0x004A,	"receiveData")			; Receive messages from threads
 	log(job.workTally.total " " stringUpper(job.Cmd) " jobs starting ...")
 	SB_SetText(job.workTally.total " " stringUpper(job.Cmd) " jobs started" , 1)
-	setTimer, timeoutTimer, 2000																							; Check for timeout of chdman or thread
+	setTimer, timeoutTimer, 1000																							; Check for timeout of chdman or thread
 	job.started := true
 	job.startTime := a_TickCount
 	
 	loop {
 		if ( job.availPSlots.length() > 0 && job.workQueue.length() > 0 ) {								; Wait for an available slot in the queue to be added
 			thisJob := job.workQueue.removeAt(1)														; Grab the first job from the work queue and assign parameters to variable
+			
 			thisJob.pSlot := job.availPSlots.removeAt(1)												; Assign the progress bar a y position from available queue
 			job.msgData[thisJob.pSlot] := {}
 			job.msgData[a_index].timeout := 0
@@ -1024,12 +1025,13 @@ buttonStartJobs()
 				sendAppMessage(toJSON(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
 				sleep 25
 			}
+			sleep 250
 		}
+		else
+			sleep 50
 		
 		if ( job.workTally.finished == job.workTally.total || job.started == false )
 			break																						; Job queue has finished
-	
-		sleep 100
 	}
 	
 	setTimer, timeoutTimer, off
@@ -1305,7 +1307,7 @@ timeoutTimer()
 	global job, jobQueueSize, timeoutSec
 	
 	loop % jobQueueSize {			 		; Loop though jobs 
-		job.msgData[a_index].timeout += 2	; And add 2 seconds to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receieveData() with each data receieve
+		job.msgData[a_index].timeout += 1	; And add 1 seconds to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receieveData() with each data receieve
 
 		if ( job.msgData[a_index].timeout >= timeoutSec ) {			; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
 			processPIDClose(job.msgData[a_index].chdmanPID, 5, 150)		; So attempt to close the process associated with it
