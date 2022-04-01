@@ -104,9 +104,9 @@ toFile := recvData.toFileFull ? """" recvData.toFileFull """" : ""
 cmdLine := chdmanLocation . " " . recvData.cmd . recvData.cmdOpts . " -v" . (fromFile ? " -i " fromFile : "") . (toFile ? " -o " toFile : "")
 thread_log("`nCommand line: " cmdLine "`n`n") 
 
-setTimer, thread_chdmanTimeout, % (chdmanTimeoutTimeSec*1000) 						; Set timeout timer
+setTimer, thread_timeout, % (timeoutSec*1000) 						; Set timeout timer
 output := runCMD(cmdLine, recvData.workingDir, "CP0", "thread_parseCHDMANOutput")
-setTimer, thread_chdmanTimeout, off
+setTimer, thread_timeout, off
 
 if ( tempZipDirectory )
 	thread_deleteDir(tempZipDirectory, 1) ; Always delete temp directory
@@ -210,10 +210,10 @@ thread_checkForErrors(msg)
 ;-------------------------------------------------------------------------
 thread_parseCHDMANOutput(data, lineNum, cPID) 													
 { 																	
-	global sendData, chdmanVerArray, mainAppName, chdmanTimeoutTimeSec
+	global sendData, chdmanVerArray, mainAppName, timeoutSec
 	sendData.chdmanPID := cPID ? cPID : ""
 
-	setTimer, thread_chdmanTimeout, % (chdmanTimeoutTimeSec*1000)
+	setTimer, thread_timeout, % (timeoutSec*1000)
 	
 	if ( lineNum > 1 ) {
 		if ( stPos := inStr(data, "Compressing") ) {
@@ -283,6 +283,8 @@ thread_sendData(msg:="")
 	sendData.log := ""
 	sendData.status := ""
 	sendData.report := ""
+	sendData.progress := ""
+	sendData.progressText := ""
 }
 	
 	
@@ -351,7 +353,7 @@ thread_killProcess()
 
 ; timer is refreshed on every call of thread_parseCHDMANOutput - if it lands here we assume chdman has timed out
 ; ------------------------------------------------------------------------------------------
-thread_chdmanTimeout()
+thread_timeout()
 {
 	global recvData, sendData
 	

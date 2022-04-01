@@ -64,6 +64,7 @@ v1.07
 	- Fixed: Folder and fiile browsing shows input types that aren't actually selected
 	- Fixed: Multiple folders being added to queue seperately
 	- Fixed: gdi/cue/toc file read function is more robust
+	- Fixed timeout monitoring
 	- Changed error handling for output chd files that already exist
 	- Minor GUI changes
 */
@@ -90,8 +91,7 @@ mainAppNameVerbose := mainAppName " - Verbose"
 runAppName := mainAppName " - Job"
 runAppNameChdman := runAppName " - chdman"
 runAppNameConsole := runAppName " - Console"
-jobTimeoutSec := 10
-chdmanTimeoutTimeSec := 8
+timeoutSec := 30
 waitTimeConsoleSec := 15
 jobQueueSize := 3
 jobQueueSizeLimit := 10
@@ -1003,7 +1003,7 @@ buttonStartJobs()
 	onMessage(0x004A,	"receiveData")			; Receive messages from threads
 	log(job.workTally.total " " stringUpper(job.Cmd) " jobs starting ...")
 	SB_SetText(job.workTally.total " " stringUpper(job.Cmd) " jobs started" , 1)
-	setTimer, jobTimeoutTimer, 2000																							; Check for timeout of chdman or thread
+	setTimer, timeoutTimer, 2000																							; Check for timeout of chdman or thread
 	job.started := true
 	job.startTime := a_TickCount
 	
@@ -1030,7 +1030,7 @@ buttonStartJobs()
 		sleep 100
 	}
 	
-	setTimer, jobTimeoutTimer, off
+	setTimer, timeoutTimer, off
 	job.started := false
 	job.endTime := a_Tickcount
 	guiToggle("hide", "buttonCancelAllJobs")
@@ -1404,11 +1404,10 @@ receiveData(wParam, lParam)
 	global job
 
 	data := fromJSON(strGet( numGet(lParam + 2*A_PtrSize) ,, "utf-8"))
+	parseMsgData(data)
 	
 	job.msgData[data.pSlot] := data				; Assign globally so we can use anywhere in script - mainly to kill job and check on timeout activity
 	job.msgData[data.pSlot].timeout := 0		; Zero out timeout because we know this job is active
-	
-	parseMsgData(data)
 }
 	
 	
@@ -1481,14 +1480,14 @@ parseMsgData(recvData)							; This is split from receieveData so parsing can be
 ; Job timeout timer
 ; Timer is set to call this function every 1000 ms
 ; ----------------------
-jobTimeoutTimer() 
+timeoutTimer() 
 {
-	global job, jobQueueSize, jobTimeoutSec
+	global job, jobQueueSize, timeoutSec
 	
 	loop % jobQueueSize {			 		; Loop though jobs 
-		job.msgData[a_index].timeout += 2	; And add 2 seconds to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out with each data receieve
+		job.msgData[a_index].timeout += 2	; And add 2 seconds to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receieveData() with each data receieve
 
-		if ( job.msgData[a_index].timeout >= jobTimeoutSec ) {			; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
+		if ( job.msgData[a_index].timeout >= timeoutSec ) {			; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
 			processPIDClose(job.msgData[a_index].chdmanPID, 5, 150)		; So attempt to close the process associated with it
 			
 			job.msgData[a_index].status := "error"						; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
@@ -1591,7 +1590,6 @@ createJob(command, theseJobOpts, outputExts="", inputExts:="", inputFiles="", ou
 			wQueue.push(q) ; Push data to array
 		}
 	}
-	msgbox % q.idx " --- " wQueue.length()
 	return wQueue
 }
 
