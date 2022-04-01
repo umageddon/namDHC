@@ -76,13 +76,13 @@ if ( recvData.fromFileExt == "zip" ) {
 				}
 			}
 			if ( !fromFile )
-				error := ["Job halted - Error finding unzipped files", "Error finding unzipped files"]
+				error := ["Error finding unzipped files", "Error finding unzipped files"]
 		}
 		else 
-			error := ["Job halted - Error unzipping file '" recvData.fromFileFull "'", "Error unzipping file  -  " recvData.fromFileFull]
+			error := ["Error unzipping file '" recvData.fromFileFull "'", "Error unzipping file  -  " recvData.fromFileFull]
 	}
 	else
-		error := ["Job halted - Error creating temporary directory '" mainTempDir "\" recvData.fromFileNoExt "'", "Error creating temp directory"]
+		error := ["Error creating temporary directory '" mainTempDir "\" recvData.fromFileNoExt "'", "Error creating temp directory"]
 	
 	if ( error ) {
 		sendData.status := "error"
@@ -210,10 +210,10 @@ thread_checkForErrors(msg)
 ;-------------------------------------------------------------------------
 thread_parseCHDMANOutput(data, lineNum, cPID) 													
 { 																	
-	global sendData, chdmanVerArray, mainAppName, timeoutSec
+	global sendData, recvData, chdmanVerArray, mainAppName, timeoutSec
 	sendData.chdmanPID := cPID ? cPID : ""
 
-	setTimer, thread_timeout, % (timeoutSec*1000)
+	setTimer, thread_timeout, % (timeoutSec*1000) 				; Reset timeout timer 
 	
 	if ( lineNum > 1 ) {
 		if ( stPos := inStr(data, "Compressing") ) {
@@ -245,10 +245,15 @@ thread_parseCHDMANOutput(data, lineNum, cPID)
 		chdmanVer := trim(subStr(data, 53, (enPos-53)))
 		
 		if ( !inArray(chdmanVer, chdmanVerArray) )  {
-			sendData.status := "halted"
-			sendData.log := "Error: Wrong CHDMAN version - " chdmanVer "`nSupported versions of CHDMAN are: " arrayToString(chdmanVerArray) "`nHalted."
+			sendData.status := "error"
+			sendData.log := "Error: Wrong CHDMAN version " chdmanVer "`n - Supported versions of CHDMAN are: " arrayToString(chdmanVerArray)
+			sendData.report := "Wrong CHDMAN version supplied [" chdmanVer "]`nSupported versions of CHDMAN are: " arrayToString(chdmanVerArray) "`n`nJob cancelled.`n"
+			sendData.progressText := "Error - Wrong CHDMAN version -  " recvData.workingTitle
+			sendData.progress := 100
 			thread_log(sendData.log "`n")
 			thread_sendData()
+			
+			thread_finishJob()
 			exitApp
 		}
 	}
@@ -450,6 +455,8 @@ thread_deleteDir(dir, delFull:=0)
 thread_finishJob() 
 {
 	global sendData, recvData
+	
+	sleep 150
 	
 	sendData.status := "finished"
 	sendData.report .= "`n`n"

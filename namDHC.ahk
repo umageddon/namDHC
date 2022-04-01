@@ -39,14 +39,14 @@ v1.05
 	- Added update functionality
 	- GUI changes
 	- More GUI changes
-	- Fixed issue extracting or creating all extension types instead of selected 
+	- Fixed issue extracting or creating all formats instead of selected 
 	- Fixed JSON issues
 	- Bug fixes
 	
 v1.06
-	- Allows creation of multiple output filetypes during a single job.
-	  Filetypes will be added to the file and directory names in parenthesis.
-	  Example of files from a PSX game with both TOC and CUE types selected for output:
+	- Allows creation of multiple formats during a single job.
+	  Formats will be added to the file and directory names in parenthesis.
+	  Example of files from a PSX game with both TOC and CUE formats selected for output:
 		PSXGAME (TOC).toc
 		PSXGAME (TOC).bin
 		PSXGAME (CUE).bin
@@ -59,12 +59,13 @@ v1.06
 	
 v1.07
 	- Added zip file support. 
-		NOTE: Multiple filetypes and subfolders within the zipfile are unsupported
-	- Fixed: namDHC won't ask about duplicate files when verifying or getting info from CHD's
-	- Fixed: Folder and fiile browsing shows input types that aren't actually selected
-	- Fixed: Multiple folders being added to queue seperately
-	- Fixed: gdi/cue/toc file read function is more robust
+	  NOTE: Folders & multiple formats within zipfiles are unsupported.
+		    Also, namDHC will only use the first supported file that it finds within in each zipfile
+	- Fixed namDHC won't ask about duplicate files when verifying or getting info from CHD's
+	- Fixed Folder and file browsing shows input extensions that aren't actually selected
+	- Fixed GDI/CUE/TOC file read function is more robust
 	- Fixed timeout monitoring
+	- Fixed (?) Race condition receiving messages
 	- Changed error handling for output chd files that already exist
 	- Minor GUI changes
 */
@@ -84,14 +85,14 @@ currentAppVersion := "1.07"
 checkForUpdatesAtStartup := "yes"
 chdmanLocation := a_scriptDir "\chdman.exe"
 mainTempDir := a_Temp "\namDHC"
-chdmanVerArray := ["0.236", "0.237", "0.238", "0.239", "0.240"]
+chdmanVerArray := ["0.239", "0.240", "0.241"]
 githubRepoURL := "https://api.github.com/repos/umageddon/namDHC/releases/latest" 
 mainAppName := "namDHC"
 mainAppNameVerbose := mainAppName " - Verbose"
 runAppName := mainAppName " - Job"
 runAppNameChdman := runAppName " - chdman"
 runAppNameConsole := runAppName " - Console"
-timeoutSec := 30
+timeoutSec := 15
 waitTimeConsoleSec := 15
 jobQueueSize := 3
 jobQueueSizeLimit := 10
@@ -975,6 +976,7 @@ buttonStartJobs()
 
 	job.msgData := []
 	job.report := ""
+	job.halted := false
 	job.started := false
 	job.workTally := {running:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:""}		; Set variables
 	workQueueSize := (job.workTally.total < jobQueueSize)? job.workTally.total : jobQueueSize								; If number of jobs is less then queue count, only display those progress bars
@@ -1037,22 +1039,22 @@ buttonStartJobs()
 	guiToggle("show", "buttonStartJobs")
 	guiToggle("disable", "all")
 	
-	if ( job.workTally.haltedMsg ) {																	; There was a fatal error that didnt allow any jobs to be attempted
+	if ( job.halted ) {																	; There was a fatal error that didnt allow any jobs to be attempted
 		log("Fatal Error: " job.workTally.haltedMsg)
 		SB_SetText("Fatal Error: " job.workTally.haltedMsg , 1)
-		msgBox, 16, % "Fatal Error", job.workTally.haltedMsg "`n"
+		5guiClose()
+		msgBox, 16, % "Fatal Error", % job.workTally.haltedMsg "`n"
 	}
-	else {																								; {normal:0, cancelled:0, skipped:0, withError:0, halt:0}
+	else {
 		fnMsg := "Total number of jobs attempted: " job.workTally.total "`n"
 		fnMsg .= job.workTally.success ? job.FinPreTxt " sucessfully: " job.workTally.success "`n" : ""
 		fnMsg .= job.workTally.cancelled ? "Jobs cancelled by the user: " job.workTally.cancelled "`n" : ""
 		fnMsg .= job.workTally.skipped ? "Jobs skipped because the output file already exists: " job.workTally.skipped "`n" : ""
 		fnMsg .= job.workTally.withError ? "Jobs that finished with errors: " job.workTally.withError : ""
 		fnMsg .= "Total time to finish: " millisecToTime(job.endTime-job.startTime)
-	
 		SB_SetText("Jobs finished" (job.workTally.withError ? " with some errors":"!"), 1)
 		log( regExReplace(strReplace(fnMsg, "`n", ", "), ", $", "") )
-		
+	
 		if ( playFinishedSong == "yes" )																; Play sounds to indicate we are done
 			playSound()
 		
@@ -1136,6 +1138,277 @@ cancelJob(pSlot)
 	log("Job " job.msgData[pSlot].idx " - User requested to cancel...")
 	job.msgData[pSlot].kill := "true"
 	return sendAppMessage(toJSON(job.msgData[pSlot]), "ahk_class AutoHotkey ahk_pid  " job.msgData[pSlot].pid)
+}
+
+
+
+getDDCHDInfoList()
+{
+	global job
+	for idx, filefull in job.scannedFiles["info"]
+		ddCHDInfoList .= splitPath(filefull).file "|" ; Create CHD info dropdown list
+	return regExReplace(ddCHDInfoList, "\|$")
+}
+
+showCHDInfoLoading() 
+{
+	guiToggle("disable", "all", 3) 
+	guiToggle("show", "textCHDInfoLoading", 3) 								; Show loading message
+}
+
+
+; Show CHD info info seperate window
+; -- grab new data 'JIT'
+; ----------------------------------
+showCHDInfo(fullFileName, currNum, totalNum, guiNum:=3)
+{
+	global
+	local a, line, file, infoLineNum := 0, compressLineNum := 0, metadataTxt := ""
+
+	if ( !fileExist(fullFileName) )
+		return false
+		
+	file := splitPath(fullFilename)
+	guiToggle("enable", "textCHDInfoTitle", guiNum)	
+	guiCtrl({"textCHDInfoTitle":"[" (currNum && totalNum ? currNum "/" totalNum "]  " : "") file.file}, guiNum)																	; Change Title to filename
+	loop, parse, % runCMD(chdmanLocation " info -v -i """ fullFilename """", file.dir).msg, % "`n"				; Loop through chdman 'info' stdOut
+	{
+		if ( a_index == 1 )																						; Skip first line of output
+			continue
+		line := regExReplace(a_loopField, "`n|`r")																; Remove all CR/LF
+		if ( inStr(line, "Metadata") ) {																		; If we find string 'Metadata' in line, we know to add text to metadata string
+			line := strReplace(line, "Metadata:")																; Remove 'Metadata:' as its redundant
+			metadataTxt .= trim(line, " ") "`n"
+		}
+		if ( inStr(line, "TRACK:") ) {																			; Finding 'TRACK:' in text informs us we are in metadata section of output
+			line := trim(line, " "), line := strReplace(line, " ", " | "), line := strReplace(line, ":", ": ")  ; Fix formatting ...
+			metadataTxt .= strReplace(line, ".") "`n`n"															; ... and add it to the metadata string
+		}
+		else if ( inStr(line, ": ") ) {																			; Otherwise all data is part of file information
+			infoLineNum++																						; Increase line number counter
+			a := strSplit(line, ": ")																			; Split text into parts
+			guiToggle("enable", ["textCHDInfo_" infoLineNum, "editCHDInfo_" infoLineNum], guiNum)
+			guiCtrl({("textCHDInfo_" infoLineNum):trim(a[1], " ") ": "}, guiNum)					; Add part 1 as subtitle (ie - "File name", "Size", "SHA1", etc)
+			guiCtrl({("editCHDInfo_" infoLineNum):trim(a[2], " ")}, guiNum)								; Part 2 is the information itself 
+		}
+		else if ( line == "----------  -------  ------------------------------------" )							; When we find this string, we know we are in the overview Compression section
+			compressLineNum := 1																				; ... So flag it, use flag as the line counter and move to next loop
+		else if ( compressLineNum ) {																					
+			line := trim(line, a_space)
+			line := regExReplace(line, "      |     |    |   |  ", ";")											; Change all "|" into ";" in line and remove redundant space
+			a := strSplit(line, ";")																			; Then split it into part
+			if ( a[1] ) {
+				guiToggle("enable", ["textCHDInfoHunks_" compressLineNum, "textCHDInfoType_" compressLineNum, "textCHDInfoPercent_" compressLineNum], guiNum)
+				guiCtrl({("textCHDInfoHunks_" compressLineNum):trim(a[1], a_space)}, guiNum)								; Part 1 is Hunks
+				guiCtrl({("textCHDInfoType_" compressLineNum):trim(a[3] " " a[4] " " a[5] " " a[6], a_space)}, guiNum)	; Part 2 is Compression Type
+				guiCtrl({("textCHDInfoPercent_" compressLineNum):trim(a[2], a_space)}, guiNum)							; Part 3 is percentage of compression
+			}
+			compressLineNum++																							; Add to meta line number
+		}
+	}
+	guiToggle("enable", "editMetadata", guiNum)		; Enable all elements
+	guiCtrl({"editMetadata": metadataTxt}, guiNum)
+	controlFocus, , % "CHD Info"
+	return true
+}
+
+
+
+; Receieve message data from thread script
+; ----------------------------------------
+receiveData(wParam, lParam) 
+{
+	critical
+	global job
+
+	data := fromJSON(strGet( numGet(lParam + 2*A_PtrSize) ,, "utf-8"))
+	
+	job.msgData[data.pSlot] := data				; Assign globally so we can use anywhere in script - mainly to kill job and check on timeout activity
+	job.msgData[data.pSlot].timeout := 0		; Zero out timeout because we know this job is active
+	
+	parseMsgData(data)
+}
+	
+	
+	
+; Parse data receieved from thread script 
+; --------------------------------------
+parseMsgData(recvData)							; This is split from receieveData so parsing can be called in other parts of the script without having to receive data from thread
+{
+	global job, removeFileEntryAfterFinish
+	static report := []
+	
+	if ( recvData.log )
+		log("Job " recvData.idx " - " recvData.log)
+	
+	if ( recvData.report )
+		report[recvData.idx] .= recvData.report		; Static variable adds to end report data
+
+	switch recvData.status {
+		case "started":
+			job.workTally.running++
+		
+		case "fileExists":
+			job.workTally.skipped++
+			SB_SetText("Job " recvData.idx " skipped", 1)
+		
+		case "error":
+			job.workTally.withError++
+			SB_SetText("Job " recvData.idx " failed", 1)
+			
+		case "killed":
+			job.workTally.cancelled++
+			SB_SetText("Job " recvData.idx " cancelled", 1)
+		
+		case "halted":
+			job.halted := true
+			job.started := false
+			job.workTally.cancelled += job.workQueue.length() + 1				; Tally up totals
+			job.workQueue := []											; Empty the work queue
+			job.workTally.haltedMsg := recvData.log						; Set flag and error log
+			log("Fatal Error. Halted all jobs")
+			
+		case "success":
+			job.workTally.success++
+			SB_SetText("Job " recvData.idx " finished successfully!", 1)
+			if ( removeFileEntryAfterFinish == "yes" ) {
+				removeFromArray(recvData.fromFileFull, job.scannedFiles[recvData.cmd])
+				loop % LV_GetCount()												; Clear finished files from scanned files
+					if ( LV_GetText2(a_index) == recvData.fromFileFull )
+						LV_Delete(a_index)
+			}
+		
+		case "finished":
+			job.report .= report[recvData.idx]
+			report[recvData.idx] := ""
+			job.availPSlots.push(recvData.pSlot)										; Add an available slot to progress bar array
+			job.workTally.finished++
+			percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
+			guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
+			
+	}
+	
+	if ( recvData.progress <> "" )
+		guiControl,1:, % "progress" recvData.pSlot, % recvData.progress
+	if ( recvData.progressText ) {
+		guiControl,1:, % "progressText" recvData.pSlot, % recvData.progressText
+		;log("PSLOT[" recvData.pSlot "] -> " recvData.progressText)
+	}
+}
+
+
+; Job timeout timer
+; Timer is set to call this function every 1000 ms
+; ----------------------
+timeoutTimer() 
+{
+	global job, jobQueueSize, timeoutSec
+	
+	loop % jobQueueSize {			 		; Loop though jobs 
+		job.msgData[a_index].timeout += 2	; And add 2 seconds to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receieveData() with each data receieve
+
+		if ( job.msgData[a_index].timeout >= timeoutSec ) {			; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
+			processPIDClose(job.msgData[a_index].chdmanPID, 5, 150)		; So attempt to close the process associated with it
+			
+			job.msgData[a_index].status := "error"						; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
+			job.msgData[a_index].log := "Error: Job timed out"
+			job.msgData[a_index].report := "`nError: Job timed out`n`n`n"
+			job.msgData[a_index].progress := 100
+			job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
+			parseMsgData(job.msgData[a_index])
+			
+			job.msgData[a_index].log := ""								; Update job.msgData[] again, 
+			job.msgData[a_index].report := ""
+			job.msgData[a_index].status := "finished"					; Assign "finished" flag
+			parseMsgData(job.msgData[a_index])
+			return true
+		}
+	}
+	return false
+}
+
+
+
+
+; Create  or add to the input files queue (return a work queue)
+; -------------------------------------------------------
+createJob(command, theseJobOpts, outputExts="", inputExts:="", inputFiles="", outputFolder="") 
+{
+	global
+	local wCount :=0, wQueue := [], dupFound := {}, idx, idx2, obj, thisOpt, optVal, cmdOpts := "", fromFileFull, splitFromFile, toExt, q, PID := dllCall("GetCurrentProcessId")
+
+	gui 1:submit, nohide
+	
+	for idx, thisOpt in (isObject(theseJobOpts) ? theseJobOpts : [])								; Parse through supplied Options associated with job
+	{
+		if ( guiCtrlGet(thisOpt.name "_checkbox", 1) == 0 )											; Skip if the checkbox is not checked
+			continue
+		if ( thisOpt.editField )
+			optVal := guiCtrlGet(thisOpt.name "_edit")
+		else if ( thisOpt.dropdownOptions ) {
+			optVal := guiCtrlGet(thisOpt.name "_dropdown")											; Get the dropdown value for the current GUI.chdmanOpt
+			optVal := isObject(thisOpt.dropdownValues) ? thisOpt.dropdownValues[optVal] : optVal	; If this dropdown option contains a dropdownValues array, optVal becomes the index for that array
+		}
+		if ( thisOpt.paramString ) {
+			optVal := optVal ? (thisOpt.useQuotes ? " """ optVal """" : " " optVal) : ""
+			cmdOpts .= " -" thisOpt.paramString . optVal 											; Create the chdman options string
+		}
+	}
+	
+	for idx, fromFileFull in (isObject(inputFiles) ? inputFiles : [inputFiles]) {
+		splitFromFile := splitPath(fromFileFull)
+		
+		for idx, toExt in (isObject(outputExts) ? outputExts : [outputExts]) {
+			
+			q := {}				
+			q.idx				:= wQueue.length() + 1
+			q.id				:= command q.idx
+			q.hostPID			:= PID
+			q.cmd				:= command
+			q.cmdOpts			:= cmdOpts
+			q.inputFileTypes    := isObject(inputExts) ? inputExts : [inputExts]
+			q.deleteInputDir	:= deleteInputDir_checkbox
+			q.deleteInputFiles 	:= deleteInputFiles_checkbox
+			q.keepIncomplete 	:= keepIncomplete_checkbox
+			q.workingDir		:= splitFromFile.dir
+			q.fromFileExt		:= splitFromFile.ext
+			q.fromFile			:= splitFromFile.file
+			q.fromFileNoExt 	:= splitFromFile.noExt
+			q.fromFileFull		:= fromFileFull
+			if ( command <> "verify" && command <> "info" ) {
+				q.toFileNoExt	:= outputExts.length()>1 ? splitFromFile.noExt " (" stringUpper(toExt) ")" : splitFromFile.noExt									; For the target file, we use the same base filename as the source
+				q.outputFolder	:= createSubDir_checkbox ? outputFolder "\" q.toFileNoExt : outputFolder
+				q.toFileExt 	:= toExt
+				q.toFile		:= q.toFileNoExt "." toExt
+				q.toFileFull	:= q.outputFolder "\" q.toFileNoExt "." toExt
+				
+				; If a duplicate filename was found (ie - 'D:\folder\gameX.chd' and 'C:\folderA\gameX.chd' would both output 'gameX.cue, gameX.bin') ...
+				; .. we will suffix a number to the filename gameX-1.chd and gameX-2.chd
+				for idx, obj in wQueue {
+					if ( obj.toFileFull == q.toFileFull ) {
+						dupFound[q.toFileFull] ? dupFound[q.toFileFull]++ : dupFound[q.toFileFull] := 2
+						msgbox, 36, % "Duplicate filename", % "A duplicate output filename was deteced (#" dupFound[q.toFileFull]-1 ")`n`nSource:`n'" q.fromFileFull "'`n`nDuplicate target:`n'" q.toFileFull "'`n`n`n[ YES ] to rename it`n[ NO ] to skip the conversion"
+						ifMsgBox Yes
+						{
+							q.toFileNoExt	.= " - " dupFound[q.toFileFull]
+							q.outputFolder	:= createSubDir_checkbox ? outputFolder "\" q.toFileNoExt : outputFolder
+							q.toFile		:= q.toFileNoExt "." toExt
+							q.toFileFull	:= q.outputFolder "\" q.toFileNoExt "." toExt
+						}
+						ifMsgBox No 
+						{
+							dupFound[q.toFileFull]--
+							q := {}
+						}
+						break
+					}
+				}
+			}
+			q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
+			wQueue.push(q) ; Push data to array
+		}
+	}
+	return wQueue
 }
 
 
@@ -1322,277 +1595,6 @@ showVerboseWindow(show:="yes")
 		gui 2:hide
 	}
 }
-
-
-getDDCHDInfoList()
-{
-	global job
-	for idx, filefull in job.scannedFiles["info"]
-		ddCHDInfoList .= splitPath(filefull).file "|" ; Create CHD info dropdown list
-	return regExReplace(ddCHDInfoList, "\|$")
-}
-
-showCHDInfoLoading() 
-{
-	guiToggle("disable", "all", 3) 
-	guiToggle("show", "textCHDInfoLoading", 3) 								; Show loading message
-}
-
-
-; Show CHD info info seperate window
-; -- grab new data 'JIT'
-; ----------------------------------
-showCHDInfo(fullFileName, currNum, totalNum, guiNum:=3)
-{
-	global
-	local a, line, file, infoLineNum := 0, compressLineNum := 0, metadataTxt := ""
-
-	if ( !fileExist(fullFileName) )
-		return false
-		
-	file := splitPath(fullFilename)
-	guiToggle("enable", "textCHDInfoTitle", guiNum)	
-	guiCtrl({"textCHDInfoTitle":"[" (currNum && totalNum ? currNum "/" totalNum "]  " : "") file.file}, guiNum)																	; Change Title to filename
-	loop, parse, % runCMD(chdmanLocation " info -v -i """ fullFilename """", file.dir).msg, % "`n"				; Loop through chdman 'info' stdOut
-	{
-		if ( a_index == 1 )																						; Skip first line of output
-			continue
-		line := regExReplace(a_loopField, "`n|`r")																; Remove all CR/LF
-		if ( inStr(line, "Metadata") ) {																		; If we find string 'Metadata' in line, we know to add text to metadata string
-			line := strReplace(line, "Metadata:")																; Remove 'Metadata:' as its redundant
-			metadataTxt .= trim(line, " ") "`n"
-		}
-		if ( inStr(line, "TRACK:") ) {																			; Finding 'TRACK:' in text informs us we are in metadata section of output
-			line := trim(line, " "), line := strReplace(line, " ", " | "), line := strReplace(line, ":", ": ")  ; Fix formatting ...
-			metadataTxt .= strReplace(line, ".") "`n`n"															; ... and add it to the metadata string
-		}
-		else if ( inStr(line, ": ") ) {																			; Otherwise all data is part of file information
-			infoLineNum++																						; Increase line number counter
-			a := strSplit(line, ": ")																			; Split text into parts
-			guiToggle("enable", ["textCHDInfo_" infoLineNum, "editCHDInfo_" infoLineNum], guiNum)
-			guiCtrl({("textCHDInfo_" infoLineNum):trim(a[1], " ") ": "}, guiNum)					; Add part 1 as subtitle (ie - "File name", "Size", "SHA1", etc)
-			guiCtrl({("editCHDInfo_" infoLineNum):trim(a[2], " ")}, guiNum)								; Part 2 is the information itself 
-		}
-		else if ( line == "----------  -------  ------------------------------------" )							; When we find this string, we know we are in the overview Compression section
-			compressLineNum := 1																				; ... So flag it, use flag as the line counter and move to next loop
-		else if ( compressLineNum ) {																					
-			line := trim(line, a_space)
-			line := regExReplace(line, "      |     |    |   |  ", ";")											; Change all "|" into ";" in line and remove redundant space
-			a := strSplit(line, ";")																			; Then split it into part
-			if ( a[1] ) {
-				guiToggle("enable", ["textCHDInfoHunks_" compressLineNum, "textCHDInfoType_" compressLineNum, "textCHDInfoPercent_" compressLineNum], guiNum)
-				guiCtrl({("textCHDInfoHunks_" compressLineNum):trim(a[1], a_space)}, guiNum)								; Part 1 is Hunks
-				guiCtrl({("textCHDInfoType_" compressLineNum):trim(a[3] " " a[4] " " a[5] " " a[6], a_space)}, guiNum)	; Part 2 is Compression Type
-				guiCtrl({("textCHDInfoPercent_" compressLineNum):trim(a[2], a_space)}, guiNum)							; Part 3 is percentage of compression
-			}
-			compressLineNum++																							; Add to meta line number
-		}
-	}
-	guiToggle("enable", "editMetadata", guiNum)		; Enable all elements
-	guiCtrl({"editMetadata": metadataTxt}, guiNum)
-	controlFocus, , % "CHD Info"
-	return true
-}
-
-
-
-; Receieve message data from thread script
-; ----------------------------------------
-receiveData(wParam, lParam) 
-{
-	critical
-	global job
-
-	data := fromJSON(strGet( numGet(lParam + 2*A_PtrSize) ,, "utf-8"))
-	parseMsgData(data)
-	
-	job.msgData[data.pSlot] := data				; Assign globally so we can use anywhere in script - mainly to kill job and check on timeout activity
-	job.msgData[data.pSlot].timeout := 0		; Zero out timeout because we know this job is active
-}
-	
-	
-	
-; Parse data receieved from thread script 
-; --------------------------------------
-parseMsgData(recvData)							; This is split from receieveData so parsing can be called in other parts of the script without having to receive data from thread
-{
-	global job, removeFileEntryAfterFinish
-	static report := []
-	
-	if ( recvData.log )
-		log("Job " recvData.idx " - " recvData.log)
-	
-	if ( recvData.report )
-		report[recvData.idx] .= recvData.report		; Static variable adds to end report data
-
-	switch recvData.status {
-		case "started":
-			job.workTally.running++
-		
-		case "fileExists":
-			job.workTally.skipped++
-			SB_SetText("Job " recvData.idx " skipped", 1)
-		
-		case "error":
-			job.workTally.withError++
-			SB_SetText("Job " recvData.idx " failed", 1)
-			
-		case "killed":
-			job.workTally.cancelled++
-			SB_SetText("Job " recvData.idx " cancelled", 1)
-		
-		case "halted":
-			job.workTally.cancelled += job.workQueue.length() + 1				; Tally up totals
-			job.workQueue := []											; Empty the work queue
-			job.workTally.haltedMsg := recvData.log						; Set flag and error log
-			log("Fatal Error. Halted all jobs")
-			
-		case "success":
-			job.workTally.success++
-			SB_SetText("Job " recvData.idx " finished successfully!", 1)
-			if ( removeFileEntryAfterFinish == "yes" ) {
-				removeFromArray(recvData.fromFileFull, job.scannedFiles[recvData.cmd])
-				loop % LV_GetCount()												; Clear finished files from scanned files
-					if ( LV_GetText2(a_index) == recvData.fromFileFull )
-						LV_Delete(a_index)
-			}
-		
-		case "finished":
-			job.report .= report[recvData.idx]
-			report[recvData.idx] := ""
-			job.workTally.finished++
-			percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
-			guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
-			sleep 50
-			job.availPSlots.push(recvData.pSlot)										; Add an available slot to progress bar array
-	}
-	
-	if ( recvData.progress <> "" )
-		guiControl,1:, % "progress" recvData.pSlot, % recvData.progress
-	if ( recvData.progressText ) {
-		guiControl,1:, % "progressText" recvData.pSlot, % recvData.progressText
-		;log("PSLOT[" recvData.pSlot "] -> " recvData.progressText)
-	}
-	
-}
-
-
-; Job timeout timer
-; Timer is set to call this function every 1000 ms
-; ----------------------
-timeoutTimer() 
-{
-	global job, jobQueueSize, timeoutSec
-	
-	loop % jobQueueSize {			 		; Loop though jobs 
-		job.msgData[a_index].timeout += 2	; And add 2 seconds to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receieveData() with each data receieve
-
-		if ( job.msgData[a_index].timeout >= timeoutSec ) {			; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
-			processPIDClose(job.msgData[a_index].chdmanPID, 5, 150)		; So attempt to close the process associated with it
-			
-			job.msgData[a_index].status := "error"						; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
-			job.msgData[a_index].log := "Error: Job timed out"
-			job.msgData[a_index].report := "`nError: Job timed out`n`n`n"
-			job.msgData[a_index].progress := 100
-			job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
-			job.queuedMsgData.push(job.msgData[a_index])
-			parseMsgData(job.msgData[a_index])
-			
-			job.msgData[a_index].log := ""								; Update job.msgData[] again, 
-			job.msgData[a_index].report := ""
-			job.msgData[a_index].status := "finished"					; Assign "finished" flag
-			job.queuedMsgData.push(job.msgData[a_index])				; Queue the data and parse it
-			parseMsgData(job.msgData[a_index])
-			return true
-		}
-	}
-	return false
-}
-
-
-
-
-; Create  or add to the input files queue (return a work queue)
-; -------------------------------------------------------
-createJob(command, theseJobOpts, outputExts="", inputExts:="", inputFiles="", outputFolder="") 
-{
-	global
-	local wCount :=0, wQueue := [], dupFound := {}, idx, idx2, obj, thisOpt, optVal, cmdOpts := "", fromFileFull, splitFromFile, toExt, q, PID := dllCall("GetCurrentProcessId")
-
-	gui 1:submit, nohide
-	
-	for idx, thisOpt in (isObject(theseJobOpts) ? theseJobOpts : [])								; Parse through supplied Options associated with job
-	{
-		if ( guiCtrlGet(thisOpt.name "_checkbox", 1) == 0 )											; Skip if the checkbox is not checked
-			continue
-		if ( thisOpt.editField )
-			optVal := guiCtrlGet(thisOpt.name "_edit")
-		else if ( thisOpt.dropdownOptions ) {
-			optVal := guiCtrlGet(thisOpt.name "_dropdown")											; Get the dropdown value for the current GUI.chdmanOpt
-			optVal := isObject(thisOpt.dropdownValues) ? thisOpt.dropdownValues[optVal] : optVal	; If this dropdown option contains a dropdownValues array, optVal becomes the index for that array
-		}
-		if ( thisOpt.paramString ) {
-			optVal := optVal ? (thisOpt.useQuotes ? " """ optVal """" : " " optVal) : ""
-			cmdOpts .= " -" thisOpt.paramString . optVal 											; Create the chdman options string
-		}
-	}
-	
-	for idx, fromFileFull in (isObject(inputFiles) ? inputFiles : [inputFiles]) {
-		splitFromFile := splitPath(fromFileFull)
-		
-		for idx, toExt in (isObject(outputExts) ? outputExts : [outputExts]) {
-			
-			q := {}				
-			q.idx				:= wQueue.length() + 1
-			q.id				:= command q.idx
-			q.hostPID			:= PID
-			q.cmd				:= command
-			q.cmdOpts			:= cmdOpts
-			q.inputFileTypes    := isObject(inputExts) ? inputExts : [inputExts]
-			q.deleteInputDir	:= deleteInputDir_checkbox
-			q.deleteInputFiles 	:= deleteInputFiles_checkbox
-			q.keepIncomplete 	:= keepIncomplete_checkbox
-			q.workingDir		:= splitFromFile.dir
-			q.fromFileExt		:= splitFromFile.ext
-			q.fromFile			:= splitFromFile.file
-			q.fromFileNoExt 	:= splitFromFile.noExt
-			q.fromFileFull		:= fromFileFull
-			if ( command <> "verify" && command <> "info" ) {
-				q.toFileNoExt	:= outputExts.length()>1 ? splitFromFile.noExt " (" stringUpper(toExt) ")" : splitFromFile.noExt									; For the target file, we use the same base filename as the source
-				q.outputFolder	:= createSubDir_checkbox ? outputFolder "\" q.toFileNoExt : outputFolder
-				q.toFileExt 	:= toExt
-				q.toFile		:= q.toFileNoExt "." toExt
-				q.toFileFull	:= q.outputFolder "\" q.toFileNoExt "." toExt
-				
-				; If a duplicate filename was found (ie - 'D:\folder\gameX.chd' and 'C:\folderA\gameX.chd' would both output 'gameX.cue, gameX.bin') ...
-				; .. we will suffix a number to the filename gameX-1.chd and gameX-2.chd
-				for idx, obj in wQueue {
-					if ( obj.toFileFull == q.toFileFull ) {
-						dupFound[q.toFileFull] ? dupFound[q.toFileFull]++ : dupFound[q.toFileFull] := 2
-						msgbox, 36, % "Duplicate filename", % "A duplicate output filename was deteced (#" dupFound[q.toFileFull]-1 ")`n`nSource:`n'" q.fromFileFull "'`n`nDuplicate target:`n'" q.toFileFull "'`n`n`n[ YES ] to rename it`n[ NO ] to skip the conversion"
-						ifMsgBox Yes
-						{
-							q.toFileNoExt	.= " - " dupFound[q.toFileFull]
-							q.outputFolder	:= createSubDir_checkbox ? outputFolder "\" q.toFileNoExt : outputFolder
-							q.toFile		:= q.toFileNoExt "." toExt
-							q.toFileFull	:= q.outputFolder "\" q.toFileNoExt "." toExt
-						}
-						ifMsgBox No 
-						{
-							dupFound[q.toFileFull]--
-							q := {}
-						}
-						break
-					}
-				}
-			}
-			q.workingTitle 	:= q.toFile ? q.toFile : q.fromFile
-			wQueue.push(q) ; Push data to array
-		}
-	}
-	return wQueue
-}
-
 
 
 ; Log messages and send to verbose window
@@ -1892,7 +1894,7 @@ stringLower(str)
 ; ---------------------------
 stringUpper(str, title:=false) 
 {
-	stringUpper, rtn, str, % title? "T":""
+	stringUpper, rtn, str, % title ? "T":""
 	return rtn
 }
 
