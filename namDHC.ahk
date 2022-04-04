@@ -60,13 +60,14 @@ v1.07
 	- Added zip file support. 
 	  NOTE: Folders & multiple formats within zipfiles are unsupported.
 		    namDHC will use only the first supported file that it finds within in each zipfile
+	- Changed quit routine
+	- Changed error handling for output chd files that already exist
+	- Changed GDI/CUE/TOC file read function
 	- Fixed namDHC won't ask about duplicate files when verifying or getting info from CHD's
 	- Fixed Folder and file browsing shows input extensions that aren't actually selected
-	- Fixed GDI/CUE/TOC file read function is more robust
 	- Fixed timeout monitoring
 	- Fixed some race conditions
-	- Changed error handling for output chd files that already exist
-	- Minor GUI changes
+	- GUI changes n' stuff
 */
 
 
