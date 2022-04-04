@@ -12,7 +12,6 @@ SetControlDelay, -1
 SetWorkingDir %a_ScriptDir%
 
 
-
 /*
 v1.00
 	- Initial release
@@ -60,7 +59,7 @@ v1.06
 v1.07
 	- Added zip file support. 
 	  NOTE: Folders & multiple formats within zipfiles are unsupported.
-		    Also, namDHC will only use the first supported file that it finds within in each zipfile
+		    namDHC will use only the first supported file that it finds within in each zipfile
 	- Fixed namDHC won't ask about duplicate files when verifying or getting info from CHD's
 	- Fixed Folder and file browsing shows input extensions that aren't actually selected
 	- Fixed GDI/CUE/TOC file read function is more robust
@@ -161,7 +160,7 @@ GUI.menu.File[1] :=		{name:"Quit",											gotolabel:"quitApp",					saveVar:""
 GUI.menu.About[1] :=	{name:"About",											gotolabel:"menuSelected",				saveVar:""}
 GUI.menu.Settings[1] :=	{name:"Check for updates automatically",				gotolabel:"menuSelected",				saveVar:"checkForUpdatesAtStartup"}
 GUI.menu.Settings[2] :=	{name:"Number of jobs to run concurrently",				gotolabel:":SubSettingsConcurrently",	saveVar:""}
-GUI.menu.Settings[3] :=	{name:"Show a verbose window",							gotolabel:"menuSelected",				saveVar:"showVerboseWin", Fn:"showVerboseWindow"}
+GUI.menu.Settings[3] :=	{name:"Show a verbose window",							gotolabel:"menuSelected",				saveVar:"showVerboseWin", Fn:"showVerbose"}
 GUI.menu.Settings[4] :=	{name:"Show a console window for each new job",			gotolabel:"menuSelected",				saveVar:"showJobConsole"}
 GUI.menu.Settings[5] :=	{name:"Play a sound when finished jobs",				gotolabel:"menuSelected",				saveVar:"playFinishedSong"}
 GUI.menu.Settings[6] :=	{name:"Remove entry from list when successful",			gotolabel:"menuSelected",				saveVar:"removeFileEntryAfterFinish"}
@@ -234,7 +233,7 @@ createMainGUI()
 createProgressBars() 
 createMenus()
 
-showVerboseWindow(showVerboseWin)			; Check or uncheck item "Show verbose window"  and show the window 
+showVerbose(showVerboseWin)			; Check or uncheck item "Show verbose window"  and show the window 
 selectJob()									; Select 1st selection in job dropdown list and trigger refreshGUI()
 
 if ( checkForUpdatesAtStartup == "yes" )
@@ -249,10 +248,8 @@ mainAppHWND := winExist(mainAppName)
 log(mainAppName " ready.")
 
 return
+; -----------------------------------------------------
 
-; -----------------------------------------------------
-; End Autoexec
-; -----------------------------------------------------
 
 
 
@@ -296,18 +293,13 @@ menuSelected()
 			gui 4: margin, 20 20
 			gui 4: font, s15 Q5 w700 c000000
 			gui 4: add, text, x10 y10, % mainAppName
-			
 			gui 4: font, s10 Q5 w700 c000000
 			gui 4: add, text, x100 y17, % " v" currentAppVersion
-			
 			gui 4: font, s10 Q5 w400 c000000
 			gui 4: add, text, x10 y35, % "A Windows frontend for the MAME CHDMAN tool"
-			
 			gui 4: add, button, x10 y70 w130 h22 gcheckForUpdates, % "Check for updates"
-			
 			gui 4: add, link, x10 y110, Github: <a href="https://github.com/umageddon/namDHC">https://github.com/umageddon/namDHC</a>
 			gui 4: add, link, x10 y130, MAME Info: <a href="https://www.mamedev.org/">https://www.mamedev.org/</a>
-			
 			gui 4: font, s9 Q5 w400 c000000
 			gui 4: add, text, x10 y165, % "(C) Copyright 2022 Umageddon"
 			gui 4: show, w500 center, About
@@ -1020,15 +1012,16 @@ buttonStartJobs()
 			runCmd := a_ScriptName " threadMode " (showJobConsole == "yes" ? "console" : "")			; "threadmode" flag tells script to run this script as a thread
 			run % runCmd ,,, pid																		; Run it
 			thisJob.pid := pid
-			
+			log("PRE HANDSHAKE")
 			while ( pid <> job.msgData[thisJob.pSlot].pid ) {											; Wait for confirmation that msg was receieved												
 				sendAppMessage(toJSON(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
-				sleep 25
+				sleep 50
 			}
 			sleep 250
+			log("ADDED JOB")
 		}
 		else
-			sleep 50
+			sleep 100
 		
 		if ( job.workTally.finished == job.workTally.total || job.started == false )
 			break																						; Job queue has finished
@@ -1117,7 +1110,7 @@ cancelAllJobs()
 	gui 1: +ownDialogs
 	msgBox, 36,, % "Are you sure you want to cancel all jobs?", 15
 	ifMsgBox No
-		return
+		return false
 	
 	job.workTally.cancelled += job.workQueue.length()
 	job.workTally.finished += job.workQueue.length()
@@ -1125,6 +1118,7 @@ cancelAllJobs()
 	job.workQueue := []										; Clear the work Queue
 	loop % jobQueueSize
 		cancelJob(a_index)
+	return true	
 }
 
 
@@ -1547,7 +1541,7 @@ createMenus()
 	menu, % "InputExtTypes", add				; Input & Output extension dummy menus to populate with refreshGUI() later				
 	menu, % "OutputExtTypes", add
 	
-	Menu, Tray, NoStandard						; Remove default options in tray icon with just Exit
+	Menu, Tray, NoStandard						; Remove default options in tray icon
 	Menu, Tray, Add, E&xit, quitApp
 }
 
@@ -1555,16 +1549,16 @@ createMenus()
 
 ; Show or hide main menu
 ; -------------------------------
-toggleMainMenu(showOrHide:="show") 
+toggleMainMenu(showOrHide:="show")
 {
 	global mainAppHWND
 	static visble, hMenu
 	
 	if ( !hMenu )
-		hMenu := DllCall("GetMenu", "uint", mainAppHWND)		; First save menu to retrieve later
+		hMenu := DllCall("GetMenu", "uint", mainAppHWND)			; Save menu to retrieve later
 	
 	if ( showOrHide == "show" && !visble ) {
-		dllCall("SetMenu", "uint", mainAppHWND, "uint", hMenu) 					
+		dllCall("SetMenu", "uint", mainAppHWND, "uint", hMenu)
 		visble := true
 	}
 	else if ( showOrHide == "hide" && visble ) {
@@ -1576,13 +1570,13 @@ toggleMainMenu(showOrHide:="show")
 
 ; Show or hide the verbose window
 ; -------------------------------
-showVerboseWindow(show:="yes")
+showVerbose(show:="yes")
 {
 	global 
-	static created
+	static winCreated
 	
-	if ( !created ) {
-		created := true
+	if ( !winCreated ) {
+		winCreated := true
 		gui 2:-sysmenu +resize
 		gui 2:margin, 5, 10
 		gui 2:add, edit, % "w" verboseWinPosW-10 " h" verboseWinPosH-20 " readonly veditVerbose",
@@ -1590,12 +1584,11 @@ showVerboseWindow(show:="yes")
 	if ( show == "yes" ) {
 		gui 2:show, % "w" verboseWinPosW " h" verboseWinPosH " x" verboseWinPosX " y" verboseWinPosY, % mainAppNameVerbose
 		sendMessage 0x115, 7, 0, Edit1, % mainAppNameVerbose		; Scroll to bottom of log
-		controlFocus,, % mainAppNameVerbose				; Removes seletced text effect most times
-		controlClick, Edit1, % mainAppNameVerbose 		; Removes seletced text effect when showing window first time
+		controlFocus,, % mainAppNameVerbose							; Removes seletced text effect most times
+		controlClick, Edit1, % mainAppNameVerbose 					; Removes seletced text effect when showing window first time
 	}
-	else if ( show == "no" ) {
+	else if ( show == "no" )
 		gui 2:hide
-	}
 }
 
 
@@ -1603,14 +1596,13 @@ showVerboseWindow(show:="yes")
 ; --------------------------------------
 log(newMsg:="", newline:=true, clear:=false, timestamp:=true) 
 {
-	global mainAppNameVerbose, editVerbose
+	global
 	
 	if ( !newMsg ) 
 		return false
 	
 	newMsg := timestamp ? "[" a_Hour ":" a_Min ":" a_Sec "]  " newMsg : newMsg
-	msg := clear? newMsg : guiCtrlGet("editVerbose", 2) . newMsg
-
+	local msg := clear? newMsg : guiCtrlGet("editVerbose", 2) . newMsg
 	guiCtrl({editVerbose:msg (newline? "`n" : "")}, 2)
 	sendMessage 0x115, 7, 0, Edit1, % mainAppNameVerbose	; Scroll to bottom of log
 }
@@ -1622,7 +1614,7 @@ log(newMsg:="", newline:=true, clear:=false, timestamp:=true)
 ini(job="read", var:="") 
 {
 	global
-	local varsArry := isObject(var)? var : [var]
+	local varsArry := isObject(var)? var : [var], idx, varName
 	
 	if ( varsArry[1] == "" )
 		return false
@@ -1631,12 +1623,12 @@ ini(job="read", var:="")
 		if ( job == "read" ) {
 			defaultVar := %varName%
 			iniRead, %varName%, % mainAppName ".ini", Settings, % varName
-			if ( !%varName% || %varName% == "ERROR" || %varName% == "" ) {
+			if ( %varName% == "ERROR" || %varName% == "" ) {
 				%varName% := defaultVar
 			}
 		}
 		else if ( job == "write" ) {
-			if ( !%varName% || %varName% == "ERROR" || %varName% == "" )
+			if ( %varName% == "ERROR" || %varName% == "" )
 				%varName% := %varName%
 			iniWrite, % %varName%, % mainAppName ".ini", Settings, % varName
 			;log("Saved " varName " with value " %varName%)
@@ -1742,17 +1734,15 @@ runCMD(CmdLine, workingDir:="", codepage:="CP0", Fn:="RunCMD_Output")
 ; ---------------------------------------------
 createFolder(newFolder) 
 {
-	if ( fileExist(newFolder) == "D" )	; Folder exists
-		createdFolder := newFolder
-	else {
+	if ( fileExist(newFolder) <> "D" ) {						; Folder dosent exist
 		if ( !splitPath(newFolder).drv ) {						; No drive letter can be assertained, so it's invalid
-			createdFolder := false
+			newFolder := false
 		} else {												; Output folder is valid but dosent exist
 			fileCreateDir, % regExReplace(newFolder, "\\$")
-			createdFolder := errorLevel ? false : newFolder
+			newFolder := errorLevel ? false : newFolder
 		}
 	}
-	return createdFolder										; Returns the folder name if created or it exists, or false if no folder was created
+	return newFolder											; Returns the folder name if created or it exists, or false if no folder was created
 }
 
 ; Kill all namDHC process (including chdman.exe)
@@ -1761,7 +1751,7 @@ killAllProcess()
 {
 	global mainAppName, mainAppNameVerbose, runAppName, runAppNameConsole
 
-	while ( true ) {
+	loop {
 		process, close, % "chdman.exe"
 		if ( !errorLevel )
 			break
@@ -1977,9 +1967,9 @@ moveGUIWin(wParam, lParam)
 		setTimer, writemoveGUIWin, -1000
 	}
 	return
+	
 	writemoveGUIWin:
-		ini("write", ["mainWinPosX", "mainWinPosY"])
-		ini("write", ["verboseWinPosX", "verboseWinPosY"])
+		ini("write", ["mainWinPosX", "mainWinPosY", "verboseWinPosX", "verboseWinPosY"])
 	return
 }
 
@@ -1993,6 +1983,7 @@ moveGUIWin(wParam, lParam)
 	autoXYWH("wh", "editVerbose") 						; Resize edit control with window
 	setTimer, write2GuiSize, -1000					
 	return
+	
 	write2GuiSize:
 		ini("write", ["verboseWinPosH", "verboseWinPosW"])
 	return	
@@ -2141,7 +2132,7 @@ envGet(enviro)
 
 ; Delete a file 
 ; -------------
-fileDelete(file, attempts:=5, sleepdelay:=200) 
+fileDelete(file, attempts:=5, sleepdelay:=75) 
 {
 	loop % (attempts < 1 ? 1 : attempts) { 			; 5 attempts to delete the file
 		fileDelete, % file
@@ -2155,13 +2146,11 @@ fileDelete(file, attempts:=5, sleepdelay:=200)
 
 ; Delete a folder
 ; ---------------
-folderDelete(dir, attempts:=5, sleepdelay:=200, evenFull:=0) 
+folderDelete(dir, attempts:=5, sleepdelay:=75, evenFull:=0) 
 {
-	if ( !dllCall("Shlwapi\PathIsDirectoryEmpty", "Str", dir) )
-	
+	;if ( dllCall("Shlwapi\PathIsDirectoryEmpty", "Str", dir) )
 	loop % (attempts < 1 ? 1 : attempts) {
-		
-		fileRemoveDir % dir, % evenFull				; Attempt to delete the directory 5 times
+		fileRemoveDir % dir, % evenFull				; Attempt to delete the directory 5 times, evenfull flag for when folder is full
 		if ( errorLevel == 0 )						; Success
 			return true
 		sleep % sleepdelay
@@ -2201,7 +2190,7 @@ getFilesFromCUEGDITOC(inputFiles)
 				loop, Read, % thisFile 
 				{
 					if ( a_loopReadLine is digit && a_index > 1 ) {
-						loop parse, a_loopReadLine, "
+						loop parse, a_loopReadLine, " ;"
 							if ( fileExist(f.dir "\" a_loopField) )
 								fileList.push(f.dir "\" a_loopField)
 					}
@@ -2362,7 +2351,7 @@ checkForUpdates(arg1:="", userClick:=false)
 				if ( inStr(asset.browser_download_url, "chdman.exe") )
 					chdmanBinURL := asset.browser_download_url
 				if ( inStr(asset.browser_download_url, ".zip") )
-					chdmanBinURL := asset.browser_download_url	
+					chdmanZipURL := asset.browser_download_url	
 			}
 			if ( !namDHCBinURL ) {
 				msgbox 16, % "Error", % "Update not found!"
@@ -2398,11 +2387,21 @@ checkForUpdates(arg1:="", userClick:=false)
 ; ---------
 GuiClose()
 {
-	quitApp()
-	exitApp			 ; Just in case
+	global
+	
+	if ( job.started == true ) {
+		if ( cancelAllJobs() == false )
+			return
+		else {
+			refreshGUI()
+			guiToggle("disable", "all")
+		}
+	}
+	exitApp
 }
 
 quitApp() 
 {
+	killAllProcess()
 	exitApp
 }

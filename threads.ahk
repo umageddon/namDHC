@@ -1,5 +1,5 @@
 onMessage(0x4a, "thread_receiveData")
-onExit("thread_Quit", 1)
+onExit("thread_Quit", -1)
 
 gui 1:show, hide, % runAppName
 menu tray, noIcon
@@ -38,9 +38,24 @@ sendData.log := "Starting " stringUpper(recvData.cmd) " job - " recvData.working
 sendData.progressText := "Starting job  -  " recvData.workingTitle
 thread_sendData()	
 
+
 if ( fileExist(recvData.outputFolder) <> "D" ) {
-	fileCreateDir, % recvData.outputFolder
-	thread_log("Created directory: " recvData.outputFolder "`n")
+	if ( createFolder(recvData.outputFolder) ) {
+		thread_log("Created directory " recvData.outputFolder "`n")
+	}
+	else {
+		thread_log("Error creating directory " recvData.outputFolder "`n")
+		
+		sendData.status := "error"
+		sendData.log := "Error creating directory " recvData.outputFolder
+		sendData.report := "`n" "Error creating directory " recvData.outputFolder "`n"
+		sendData.progressText := "Error creating directory  -  " recvData.workingTitle
+		sendData.progress := 100
+		thread_sendData()
+
+		thread_finishJob()
+		exitApp
+	}
 }
 
 if ( recvData.fromFileExt == "zip" ) {
@@ -479,9 +494,9 @@ thread_log(newMsg, concat=true)
 ;---------------------------------------------------------------------------------------
 thread_quit() 
 {
-	global console, waitTimeConsoleSec
+	global
 	if ( console.getConsoleHWND() )	
 		sleep waitTimeConsoleSec*1000	; Wait x seconds or until user closes window
-
+	exitApp, 321
 }
 	
