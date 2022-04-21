@@ -4,11 +4,11 @@
 detectHiddenWindows On
 setTitleMatchmode 3
 SetBatchLines, -1
-SetKeyDelay, -1, -1
-SetMouseDelay, -1
-SetDefaultMouseSpeed, 0
-SetWinDelay, -1
-SetControlDelay, -1
+;SetKeyDelay, -1, -1
+;SetMouseDelay, -1
+;SetDefaultMouseSpeed, 0
+;SetWinDelay, -1
+;SetControlDelay, -1
 SetWorkingDir %a_ScriptDir%
 
 /*
@@ -68,6 +68,8 @@ v1.07
 	- Fixed some race conditions
 	- Lots of code change
 	- GUI changes n' stuff
+	- CHanges JSON library again (hopefully last time)
+	- Having issues with script pausing/hanging after cancel command is sent to thread
 */
 
 
@@ -75,7 +77,6 @@ v1.07
 #Include ClassImageButton.ahk
 #Include ConsoleClass.ahk
 #Include JSON.ahk
-#Include JSON2.ahk
 
 ; Default global values 
 ; ---------------------
@@ -91,7 +92,7 @@ APP_RUN_JOB_NAME := APP_MAIN_NAME " - Job"
 APP_RUN_CHDMAN_NAME := APP_RUN_JOB_NAME " - chdman"
 APP_RUN_CONSOLE_NAME := APP_RUN_JOB_NAME " - Console"
 TIMEOUT_SEC := 25
-WAIT_TIME_CONSOLE_SEC := 15
+WAIT_TIME_CONSOLE_SEC := 1
 JOB_QUEUE_SIZE := 3
 JOB_QUEUE_SIZE_LIMIT := 10
 OUTPUT_FOLDER := a_workingDir
@@ -106,9 +107,9 @@ APP_VERBOSE_WIN_POS_Y := 150
 APP_MAIN_WIN_POS_X := 800
 APP_MAIN_WIN_POS_Y := 100
 
-globals := {}
 
-; Read ini to write over global variables if changed previously
+; Read ini to write over globals if changed previously
+;-------------------------------------------------------------
 ini("read" 
 	,["JOB_QUEUE_SIZE","OUTPUT_FOLDER","SHOW_JOB_CONSOLE","SHOW_VERBOSE_WINDOW","PLAY_SONG_FINISHED","REMOVE_FILE_ENTRY_AFTER_FINISH"
 	,"APP_MAIN_WIN_POS_X","APP_MAIN_WIN_POS_Y","APP_VERBOSE_WIN_WIDTH","APP_VERBOSE_WIN_HEIGHT","APP_VERBOSE_WIN_POS_X","APP_VERBOSE_WIN_POS_Y","CHECK_FOR_UPDATES_STARTUP"])
@@ -129,16 +130,16 @@ if ( a_args[1] == "threadMode" ) {
 
 
 ; Kill all processes so only one instance is running
-;---------------------------------------------------
+;-------------------------------------------------------------
 killAllProcess()
 
 
 ; Set working job variables
-; ----------------------------
+;-------------------------------------------------------------
 job := {workTally:{}, msgData:[], availPSlots:[], workQueue:[], scannedFiles:{}, queuedMsgData:[], InputExtTypes:[], OutputExtType:[], selectedOutputExtTypes:[], selectedInputExtTypes:[]}
 
 ; Set GUI variables
-; -----------------
+;-------------------------------------------------------------
 GUI := { chdmanOpt:{}, dropdowns:{job:{}, media:{}}, buttons:{normal:[], hover:[], clicked:[], disabled:[]}, menu:{namesOrder:[], File:[], Settings:[], About:[]} }
 GUI.dropdowns.job := { 	 create: {pos:1,desc:"Create CHD files from media"}
 						,extract: {pos:2,desc:"Extract images from CHD files"}
@@ -153,7 +154,7 @@ GUI.buttons.cancel :=	{normal:[0, 0xFFFC6D62, "", "White", 3], hover:[0, 0xFFff8
 GUI.buttons.start :=	{normal:[0, 0xFF74b6cc, "", 0xFF444444, 3],	hover:[0, 0xFF84bed1, "", "White", 3], clicked:[0, 0xFFa5d6e6, "", "White", 3], disabled:[0, 0xFFd3dde0, "", 0xFF888888, 3] }	
 
 ; Set menu variables
-; -------------------
+;-------------------------------------------------------------
 GUI.menu["namesOrder"] := ["File", "Settings", "About"]
 GUI.menu.File[1] :=		{name:"Quit",											gotolabel:"quitApp",					saveVar:""}
 GUI.menu.About[1] :=	{name:"About",											gotolabel:"menuSelected",				saveVar:""}
@@ -165,7 +166,7 @@ GUI.menu.Settings[5] :=	{name:"Play a sound when finished jobs",				gotolabel:"m
 GUI.menu.Settings[6] :=	{name:"Remove file entry from list on success",			gotolabel:"menuSelected",				saveVar:"REMOVE_FILE_ENTRY_AFTER_FINISH"}
 
 ; misc GUI variables
-; -------------------------
+;-------------------------------------------------------------
 GUI.HDtemplate := { ddList: ""		; Hard drive template dropdown list
 . "|Conner CFA170A  -  163MB||"
 . "Rodime R0201  -  5MB|"
@@ -187,7 +188,7 @@ GUI.CPUCores := procCountDDList()
 GUI CHDMAN options
 
 Format:
--------
+;-------------------------------------------------------------
 	name:				String	- Friendly name of option - used as a reference
 	paramString:		String	- String used in actual chdman command
 	description:		String	- String used to describe option in the GUI
@@ -228,6 +229,7 @@ GUI.chdmanOpt.keepIncomplete :=		{name: "keepIncomplete",						description: "Kee
 
 
 ; Create Main GUI and its elements
+;-------------------------------------------------------------
 createMainGUI()
 createProgressBars() 
 createMenus()
@@ -246,18 +248,15 @@ mainAppHWND := winExist(APP_MAIN_NAME)
 log(APP_MAIN_NAME " ready.")
 
 return
-; -----------------------------------------------------
+
+;-------------------------------------------------------------------------------------------------------------------------
 
 
 
 
-
-; -----------------------------------------------------
-; Functions
-; -----------------------------------------------------
 
 ; A Menu item was selected
-;-------------------------
+;-------------------------------------------------------------
 menuSelected() 
 {
 	global
@@ -316,7 +315,7 @@ menuSelected()
 
 
 ; Job selection
-; -------------
+;-------------------------------------------------------------
 selectJob() 
 {
 	global
@@ -360,8 +359,9 @@ selectJob()
 	guiCtrl("choose", {dropdownMedia:"|1"}) 																										; Choose first item in media dropdown and fire the selection 
 }
 
+
 ; Media selection
-; ---------------
+;-------------------------------------------------------------
 selectMedia()
 {
 	global
@@ -465,7 +465,7 @@ selectMedia()
 
 
 ; Refreshes GUI to reflect current settings
-; -------------------------------------------------------------------------------
+;-------------------------------------------------------------
 refreshGUI() 
 {
 	global
@@ -538,7 +538,7 @@ refreshGUI()
 
 ; User pressed input or output files button
 ; Show Ext menu
-; --------------------------------------------
+;-------------------------------------------------------------
 buttonExtSelect()
 {
 	switch a_guicontrol {
@@ -551,7 +551,7 @@ buttonExtSelect()
 
 	
 ; User selected an extension from the input/output extension menu
-; ------------------------------------------------------------------
+;-------------------------------------------------------------
 menuExtHandler(init:=false)
 {
 	global job
@@ -605,7 +605,7 @@ menuExtHandler(init:=false)
 
 
 ; Scan files and add to queue
-; ----------------------------------
+;-------------------------------------------------------------
 addFolderFiles()
 {
 	global job, APP_MAIN_NAME
@@ -683,7 +683,7 @@ addFolderFiles()
 
 
 ; Listview containting input files was clicked
-; --------------------------------------------
+;-------------------------------------------------------------
 listViewInputFiles()
 {
 	global
@@ -930,7 +930,6 @@ buttonStartJobs()
 	job.msgData := []
 	job.allReport := ""
 	job.halted := false
-	job.paused := false
 	job.started := false
 	job.workTally := {started:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:""}		; Set variables
 	job.workQueueSize := (job.workTally.total < JOB_QUEUE_SIZE)? job.workTally.total : JOB_QUEUE_SIZE								; If number of jobs is less then queue count, only display those progress bars
@@ -959,38 +958,69 @@ buttonStartJobs()
 	onMessage(0x004A, "receiveData")																						; Receive messages from threads
 	log(job.workTally.total " " stringUpper(job.Cmd) " jobs starting ...")
 	SB_SetText(job.workTally.total " " stringUpper(job.Cmd) " jobs started" , 1)
-	setTimer, timeoutTimer, 1000																							; Check for timeout of chdman or thread
+
 	job.started := true
 	job.startTime := a_TickCount
 
-	loop {
-		if ( job.paused == true )																		; Wait while pause flag is on
-			continue
-		
-		if ( job.workTally.finished == job.workTally.total || job.started == false )					; Job queue has finished
-			break
-		else if ( job.availPSlots.length() > 0 && job.workQueue.length() > 0 ) {						; Wait for an available slot in the queue to be added
-			thisJob := job.workQueue.removeAt(1)														; Grab the first job from the work queue and assign parameters to variable
-			
-			thisJob.pSlot := job.availPSlots.removeAt(1)												; Assign the progress bar a y position from available queue
-			job.msgData[thisJob.pSlot] := {}
-			job.msgData[a_index].timeout := 0
+	setTimer, jobStatusCheck, 500
+}
+	
 
-			runCmd := a_ScriptName " threadMode " (SHOW_JOB_CONSOLE == "yes" ? "console" : "")			; "threadmode" flag tells script to run this script as a thread
-			run % runCmd ,,, pid																		; Run it
-			thisJob.pid := pid
-			loop {																	
-				sendAppMessage(toJSON(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
-				sleep 50
-				if ( thisJob.pid == job.msgData[thisJob.pSlot].pid )									; Wait for confirmation that msg was receieved				
-					break
-			}
-			sleep 100
-		}
-		sleep 10
+jobStatusCheck() 
+{
+	global job, SHOW_JOB_CONSOLE, TIMEOUT_SEC
+
+	if ( job.workTally.finished == job.workTally.total || job.started == false ) {					; Job queue has finished
+		finishJobs()
+		return
 	}
 	
-	setTimer, timeoutTimer, off
+	if ( job.availPSlots.length() > 0 && job.workQueue.count() > 0 ) {
+		
+		thisJob := job.workQueue.removeAt(1)														; Grab the first job from the work queue and assign parameters to variable
+		
+		thisJob.pSlot := job.availPSlots.removeAt(1)												; Assign the progress bar a y position from available queue
+		job.msgData[thisJob.pSlot] := {}
+		job.msgData[a_index].timeout := 0
+
+		runCmd := a_ScriptName " threadMode " (SHOW_JOB_CONSOLE == "yes" ? "console" : "")			; "threadmode" flag tells script to run this script as a thread
+		run % runCmd ,,, pid																		; Run it
+		thisJob.pid := pid
+		loop {																	
+			sleep 150
+			sendAppMessage(JSON.Dump(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
+			if ( thisJob.pid == job.msgData[thisJob.pSlot].pid )									; Wait for confirmation that msg was receieved				
+				break
+		}
+	}
+	
+	; Check for a timeout
+	loop % job.workQueueSize {			 									; Loop though jobs 
+		job.msgData[a_index].timeout += 2									; And to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receiveData() with each data receieve
+
+		if ( job.msgData[a_index].status == "finished" )
+			continue
+		
+		if ( job.msgData[a_index].timeout >= TIMEOUT_SEC ) {				; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
+			
+			job.msgData[a_index].status := "error"							; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
+			job.msgData[a_index].log := "Error: Job timed out"
+			job.msgData[a_index].report := "`nError: Job timed out`n`n`n"
+			job.msgData[a_index].progress := 100
+			job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
+			parseData(job.msgData[a_index])
+
+			cancelJob(job.msgData[a_index].pSlot) 							; So attempt to close the process associated with it -- it will Assign a "finished" flag
+		}
+	}
+}
+
+	
+finishJobs() 
+{	
+	global job, APP_MAIN_NAME, PLAY_SONG_FINISHED
+	
+	setTimer, jobStatusCheck, off
 	job.started := false
 	job.endTime := a_Tickcount
 	guiToggle("hide", "buttonCancelAllJobs")
@@ -1036,7 +1066,9 @@ buttonStartJobs()
 }
 
 
-; All jobs have finished or user pressed window close
+
+
+; User closed the finish window
 ; ---------------------------------------------------
 5guiClose()
 {		
@@ -1067,7 +1099,7 @@ progressCancelButton()
 ; ---------------------------------
 cancelAllJobs()
 {
-	global job, JOB_QUEUE_SIZE_LIMIT
+	global job
 	
 	if ( job.started == false )
 		return false
@@ -1078,11 +1110,12 @@ cancelAllJobs()
 		return false
 	
 	workQueue := job.workQueue								; Create alias of workQueue to work with so the job-check queue loop wont trigger 'finished all jobs' too early
-	job.paused := true
 	job.workQueue := []										; Clear the real work Queue now
 
-	loop % JOB_QUEUE_SIZE_LIMIT								; To be sure all jobs are cancelled - invalid jobs will be ignored
+	loop % job.workQueueSize {	
 		cancelJob(a_index)
+		log(" -- QUIT JOB " a_index " ---")
+	}
 	
 	while ( workQueue.length() > 0 ) {
 		thisJob := workQueue.removeAt(1)
@@ -1094,7 +1127,6 @@ cancelAllJobs()
 		guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
 	}
 	job.started := false
-	job.paused := false
 	return true	
 }
 
@@ -1108,42 +1140,15 @@ cancelJob(pSlot)
 	
 	if ( !job.msgData[pSlot].pid || job.msgData[pSlot].status == "finished" )
 		return
+	
+	log("Job " job.msgData[pSlot].idx " - Attempting to Cancel  " job.msgData[pSlot].workingTitle)
+	
+	guiCtrl({("progress" recvData.pSlot):0})
+	guiCtrl({("progressText" recvData.pSlot):"Cancelling -  " job.msgData[pSlot].workingTitle})
 
-	job.msgData[pSlot].log := "Attempting to Cancel: " job.msgData[pSlot].workingTitle
-	job.msgData[pSlot].progress := 0
-	job.msgData[pSlot].progressText := "Cancelling -  " job.msgData[pSlot].workingTitle
-	parseData(job.msgData[pSlot]) 									; 'Send' data to be parsed
-
-	process, close, % job.msgData[pSlot].pid
-	process, WaitClose, % job.msgData[pSlot].pid, 5000
-	if ( errorlevel ) {
-		log ("Couldn't cancel " job.msgData[pSlot].workingTitle " - Error closing job")
-		return false
-	}
-	
-	process, close, % job.msgData[pSlot].chdmanPID
-	process, WaitClose, % job.msgData[pSlot].chdmanPID, 5000
-	if ( errorlevel ) {
-		log ("Couldn't cancel " job.msgData[pSlot].workingTitle " - Error closing chdman process")
-		return false
-	}
-	
-	if ( !job.msgData[pSlot].keepIncomplete && fileExist(job.msgData[pSlot].toFileFull) )	{						; Delete incomplete output files if asked to keep 
-		delFiles := deleteFilesReturnList(job.msgData[pSlot].toFileFull)
-		job.msgData[pSlot].log := delFiles ? "Deleted incomplete file(s): " regExReplace(delFiles, " ,$") : "Error deleting incomplete file(s)!"
-		job.msgData[pSlot].report := job.msgData[pSlot].log "`n"
-		job.msgData[pSlot].progress := 100
-		parseData(job.msgData[pSlot])									; 'Send' data to be parsed
-	}
-	
-	job.workTally.cancelled++
-	job.msgData[pSlot].status := "finished"
-	job.msgData[pSlot].log := "Job " job.msgData[pSlot].idx " cancelled by user"
-	job.msgData[pSlot].progressText := "Cancelled -  " job.msgData[pSlot].workingTitle
-	job.msgData[pSlot].progress := 100
-	job.msgData[pSlot].report := "`nJob cancelled by user`n"
-	parseData(job.msgData[pSlot])										; 'Send' data to be parsed
-	SB_SetText("Job " job.msgData[pSlot].idx " cancelled", 1)
+	job.msgData[pSlot].KILLPROCESS := "true"
+	JSONStr := JSON.Dump(job.msgData[pSlot])
+	sendAppMessage(JSONStr, "ahk_class AutoHotkey ahk_pid " job.msgData[pSlot].pid)
 }
 
 
@@ -1226,8 +1231,8 @@ showCHDInfo(fullFileName, currNum, totalNum, guiNum:=3)
 ; ----------------------------------------
 receiveData(data1, data2) 
 {
-	JSON := strGet(numGet(data2 + 2*A_PtrSize) ,, "utf-8")
-	data := fromJSON(JSON)
+	JSONStr := strGet(numGet(data2 + 2*A_PtrSize) ,, "utf-8")
+	data := JSON.Load(JSONStr)
 	parseData(data)
 }
 
@@ -1280,50 +1285,27 @@ parseData(recvData)
 				}
 			}
 		
+		case "cancelled":
+			job.workTally.cancelled++
+			SB_SetText("Job " job.msgData[pSlot].idx " cancelled", 1)
+		
 		case "finished":
 			job.allReport .= report[recvData.idx]
 			job.workTally.finished++
 			percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
 			guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
+			
 			job.availPSlots.push(recvData.pSlot) ; Add an available slot to progress bar array
 	}
 	
 	if ( recvData.progress <> "" )
 		guiControl,1:, % "progress" recvData.pSlot, % recvData.progress
-	if ( recvData.progressText ) {
+	if ( recvData.progressText )
 		guiControl,1:, % "progressText" recvData.pSlot, % recvData.progressText
-		;log("PSLOT[" recvData.pSlot "] -> " recvData.progressText)
-	}
 }
 
 
-; Job timeout timer
-; Timer is set to call this function every 1000 ms
-; ----------------------
-timeoutTimer() 
-{
-	global job, TIMEOUT_SEC
-	
-	loop % job.workQueueSize {			 		; Loop though jobs 
-		job.msgData[a_index].timeout += 1	; And add 1 seconds to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receiveData() with each data receieve
 
-		if ( job.msgData[a_index].status == "finished" )
-			continue
-		
-		if ( job.msgData[a_index].timeout >= TIMEOUT_SEC ) {				; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
-			
-			job.msgData[a_index].status := "error"						; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
-			job.msgData[a_index].log := "Error: Job timed out"
-			job.msgData[a_index].report := "`nError: Job timed out`n`n`n"
-			job.msgData[a_index].progress := 100
-			job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
-			parseData(job.msgData[a_index])
-			sleep 100
-
-			cancelJob(job.msgData[a_index].pSlot) 						; So attempt to close the process associated with it -- it will Assign a "finished" flag
-		}
-	}
-}
 
 
 
@@ -1686,17 +1668,17 @@ playSound()
 
 ; Send data across script instances
 ; -------------------------------------------------------
-sendAppMessage(ByRef StringToSend, ByRef TargetScriptTitle) 
+sendAppMessage(stringToSend, targetScriptTitle) 
 {
   VarSetCapacity(CopyDataStruct, 3*A_PtrSize, 0)
-  SizeInBytes := strPutVar(StringToSend, StringToSend, "utf-8")
+  SizeInBytes := strPutVar(stringToSend, stringToSend, "utf-8")
   NumPut(SizeInBytes, CopyDataStruct, A_PtrSize)
-  NumPut(&StringToSend, CopyDataStruct, 2*A_PtrSize)
+  NumPut(&stringToSend, CopyDataStruct, 2*A_PtrSize)
   Prev_DetectHiddenWindows := A_DetectHiddenWindows
   Prev_TitleMatchMode := A_TitleMatchMode
   DetectHiddenWindows On
   SetTitleMatchMode 2
-  SendMessage, 0x4a, 0, &CopyDataStruct,, % TargetScriptTitle
+  SendMessage, 0x4a, 0, &CopyDataStruct,, % targetScriptTitle
   DetectHiddenWindows %Prev_DetectHiddenWindows%
   SetTitleMatchMode %Prev_TitleMatchMode%
   return errorLevel
@@ -1704,7 +1686,7 @@ sendAppMessage(ByRef StringToSend, ByRef TargetScriptTitle)
 
 strPutVar(string, ByRef var, encoding)
 {
-	varSetCapacity( var, StrPut(string, encoding) * ((encoding="utf-16"||encoding="cp1200") ? 2 : 1) )
+	varSetCapacity( var, StrPut(string, encoding) * ((encoding="utf-8"||encoding="cp1200") ? 2 : 1) )
 	return StrPut(string, &var, encoding)
 }
 
@@ -2306,8 +2288,8 @@ checkForUpdates(arg1:="", userClick:=false)
 	obj.assets[3].browser_download_url	= URL *should* point to namDHC_vx.xx.zip
 	obj.created_at						= date created
 	*/	
-	JSON := URLDownloadToVar(GITHUB_REPO_URL)
-	obj := json2(JSON)
+	JSONStr := URLDownloadToVar(GITHUB_REPO_URL)
+	obj := JSON.Load(JSONStr)
 	
 	if ( !isObject(obj) ) {
 		log("Error updating: Update info invalid")
@@ -2395,7 +2377,7 @@ killAllProcess()
 
 	loop {
 		process, close, % "chdman.exe"
-		if ( !errorLevel )
+		if ( errorLevel == 0 )
 			break
 	}
 
