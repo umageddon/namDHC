@@ -56,9 +56,10 @@ v1.06
 	- Bugfixes, GUI changes n' stuff
 	
 v1.07
+	There are issues with cancelling running jobs with this release... If I find time, Ill try and look deeper into the issue.
+
 	- Added zip file support. 
-	  NOTE: Folders & multiple formats within zipfiles are unsupported.
-		    namDHC will use only the first supported file that it finds within in each zipfile
+	  NOTE: Folders & multiple formats within zipfiles are unsupported. namDHC will use only the first supported file that it finds within in each zipfile
 	- Changed quit routine
 	- Changed error handling for output chd files that already exist
 	- Changed file read functions
@@ -68,7 +69,7 @@ v1.07
 	- Fixed some race conditions
 	- Lots of code change
 	- GUI changes n' stuff
-	- CHanges JSON library again (hopefully last time)
+	- Changed JSON library again (hopefully last time)
 	- Having issues with script pausing/hanging after cancel command is sent to thread
 */
 
