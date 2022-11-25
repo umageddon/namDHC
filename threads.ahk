@@ -42,25 +42,26 @@ thread_sendData()
 
 ; Create output folder if it dosent exist
 ; -------------------------------------------------------------------------------------------------------------------
-if ( fileExist(thread_recvData.outputFolder) <> "D" ) {
-	if ( createFolder(thread_recvData.outputFolder) ) {
-		thread_log("Created directory " thread_recvData.outputFolder "`n")
-	}
-	else {
-		sleep 50
-		thread_log("Error creating directory " thread_recvData.outputFolder "`n")
-		
-		thread_sendData.status := "error"
-		thread_sendData.log := "Error creating directory " thread_recvData.outputFolder
-		thread_sendData.report := "`n" "Error creating directory " thread_recvData.outputFolder "`n"
-		thread_sendData.progressText := "Error creating directory  -  " thread_recvData.workingTitle
-		thread_sendData.progress := 100
-		thread_sendData()
-		thread_finishJob()
-		exitApp
+if ( thread_recvData.outputFolder ) {
+	if ( fileExist(thread_recvData.outputFolder) <> "D" ) {
+		if ( createFolder(thread_recvData.outputFolder) ) {
+			thread_log("Created directory " thread_recvData.outputFolder "`n")
+		}
+		else {
+			sleep 50
+			thread_log("Error creating directory " Error creatingthread_recvData.outputFolder "`n")
+			
+			thread_sendData.status := "error"
+			thread_sendData.log := "Error creating directory " thread_recvData.outputFolder
+			thread_sendData.report := "`n" "Error creating directory " thread_recvData.outputFolder "`n"
+			thread_sendData.progressText := "Error creating directory  -  " thread_recvData.workingTitle
+			thread_sendData.progress := 100
+			thread_sendData()
+			thread_finishJob()
+			exitApp
+		}
 	}
 }
-
 
 ; Zipfile was supplied as source
 ; -------------------------------------------------------------------------------------------------------------------

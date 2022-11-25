@@ -71,8 +71,14 @@ v1.07
 	- GUI changes n' stuff
 	- Changed JSON library again (hopefully last time)
 	- Having issues with script pausing/hanging after cancel command is sent to thread
-*/
 
+
+v1.08
+	- Fixed Verify option
+	- No need to hit enter to confirm a new output folder
+	- Limit output folder name to 255 characters
+	- Removed Add/Remove metadata indefinitely
+*/
 
 #Include SelectFolderEx.ahk
 #Include ClassImageButton.ahk
@@ -81,11 +87,11 @@ v1.07
 
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.07"
+CURRENT_VERSION := "1.08"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
-CHDMAN_VERSION_ARRAY := ["0.239", "0.240", "0.241"]
+CHDMAN_VERSION_ARRAY := ["0.239", "0.240", "0.241", "0.249"]
 GITHUB_REPO_URL := "https://api.github.com/repos/umageddon/namDHC/releases/latest" 
 APP_MAIN_NAME := "namDHC"
 APP_VERBOSE_NAME := APP_MAIN_NAME " - Verbose"
@@ -145,9 +151,11 @@ GUI := { chdmanOpt:{}, dropdowns:{job:{}, media:{}}, buttons:{normal:[], hover:[
 GUI.dropdowns.job := { 	 create: {pos:1,desc:"Create CHD files from media"}
 						,extract: {pos:2,desc:"Extract images from CHD files"}
 						,info: {pos:3, desc:"Get info from CHD files"}
-						,verify: {pos:4, desc:"Verify CHD files"}
+						,verify: {pos:4, desc:"Verify CHD files"}}
+						/*
 						,addMeta: {pos:5, desc:"Add metadata to CHD files"}
-						,delMeta: {pos:6, desc:"Delete metadata from CHD files"}}
+						,delMeta: {pos:6, desc:"Delete metadata from CHD files"} 
+						*/
 GUI.dropdowns.media :=	{ cd:"CD image", hd:"Hard disk image", ld:"LaserDisc image", raw:"Raw image" }
 
 GUI.buttons.default :=	{normal:[0, 0xFFCCCCCC, "", "", 3], hover:[0, 0xFFBBBBBB, "", 0xFF555555, 3], clicked:[0, 0xFFCFCFCF, "", 0xFFAAAAAA, 3], disabled:[0, 0xFFE0E0E0, "", 0xFFAAAAAA, 3] }
@@ -582,7 +590,7 @@ menuExtHandler(init:=false)
 		switch a_ThisMenu {													; a_ThisMenu is either 'InputExtTypes' or 'OutputExtTypes'
 			case "OutputExtTypes":											; Only one output extension is allowed to be checked
 				;for idx, val in job.OutputExtTypes
-				;	menu, OutputExtTypes, Uncheck, % val					; Uncheck all menu items, 
+				;menu, OutputExtTypes, Uncheck, % val						; Uncheck all menu items, 
 				;menu, OutputExtTypes, Check, % a_ThisMenuItem				; Then check what was clicked, so only one is ever checked
 				menu, OutputExtTypes, Togglecheck, % a_ThisMenuItem			; Toggle checking item
 		
@@ -758,12 +766,18 @@ reportQueuedFiles()
 ; --------------------
 editOutputFolder()
 {
+	setTimer checkNewOutputFolder, -500
+	return
+}
+
+; Check new inputted folder
+; -------------------------
+checkNewOutputFolder()
+{
 	global editOutputFolder, OUTPUT_FOLDER
-	badChar := false
-	
 	gui 1:submit, nohide
 	gui 1:+ownDialogs
-	
+
 	newFolder := editOutputFolder
 	if ( a_guiControl == "buttonBrowseOutput" ) {
 		newFolder := selectFolderEx(OUTPUT_FOLDER, "Select a folder to save converted files to", mainAppHWND)
@@ -771,6 +785,8 @@ editOutputFolder()
 	}
 	if ( !newFolder || newFolder == OUTPUT_FOLDER ) 
 		return
+
+	badChar := false
 	for idx, val in ["*", "?", "<", ">", "/", "|", """"] {
 		if ( inStr(newfolder, val) ) {
 			badChar := true
@@ -778,17 +794,17 @@ editOutputFolder()
 		}
 	}
 	folderChk := splitPath(newFolder)
-	if ( !folderChk.drv || !folderChk.dir || badChar ) 			; Make sure newFolder is a valid directory string
+	if ( !folderChk.drv || !folderChk.dir || badChar || strlen(newFolder) > 255 ) 	{		; Make sure newFolder is a valid directory string
 		msgBox % "Invalid output folder"
-	else {
-		OUTPUT_FOLDER := regExReplace(newFolder, "\\$")
+		guiCtrl({editOutputFolder:OUTPUT_FOLDER})				; Edit reverts back to old value if new value invalid
+	} else {
+		OUTPUT_FOLDER := normalizePath(regExReplace(newFolder, "\\$"))
 		log("'" OUTPUT_FOLDER "' selected as output folder")
 		SB_SetText("'" OUTPUT_FOLDER "' selected as new output folder" , 1)
 		ini("write", "OUTPUT_FOLDER")
 		refreshGUI()
-		controlFocus,, %APP_MAIN_NAME%
+		controlFocus,, %APP_MAIN_NAME% 
 	}
-	guiCtrl({editOutputFolder:OUTPUT_FOLDER})	; Replace edit field with new outputfolderor reverts back to old value if new value invalid
 }
 
 
@@ -1172,7 +1188,7 @@ showCHDInfoLoading()
 
 
 ; Show CHD info info seperate window
-; -- grab new data 'JIT'
+; -- grab new data JIT
 ; ----------------------------------
 showCHDInfo(fullFileName, currNum, totalNum, guiNum:=3)
 {
@@ -1465,7 +1481,7 @@ createMainGUI()
 	gui 1: font, Q5 s9 w400 c000000
 	gui 1:add, button,		x663 y324 w130 h24 vbuttonOutputExtType gbuttonExtSelect hwndGUIbutton7, % "Select output file type"
 	
-	gui 1:add, edit, 		x15 y352 w778 veditOutputFolder +wantReturn, % OUTPUT_FOLDER
+	gui 1:add, edit, 		x15 y352 w778 veditOutputFolder geditOutputFolder, % OUTPUT_FOLDER
 	
 	gui 1:add, button,		x320 y385 w160 h35 vbuttonStartJobs gbuttonStartJobs hwndstartButtonHWND, % "Start all jobs!"
 	
@@ -2262,6 +2278,14 @@ URLDownloadToVar(url){
 		hObject.Send()
 		return hObject.ResponseText
 	}
+}
+
+
+normalizePath(path) {
+    cc := DllCall("GetFullPathName", "str", path, "uint", 0, "ptr", 0, "ptr", 0, "uint")
+    VarSetCapacity(buf, cc*2)
+    DllCall("GetFullPathName", "str", path, "uint", cc, "str", buf, "ptr", 0)
+    return buf
 }
 
 
