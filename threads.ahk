@@ -350,8 +350,9 @@ thread_receiveData(wParam, lParam)
 {
 	global
 	
-	stringAddress := numGet(lParam + 2*A_PtrSize) 
-	thread_recvData := JSON.Load(strGet(stringAddress,, "utf-8"))
+	recv := strGet(numGet(lParam + 2*A_PtrSize),, "utf-8")
+	sleep 1
+	thread_recvData := JSON.Load(recv)
 	
 	if ( thread_recvData.KILLPROCESS == "true" ) {
 		thread_sendData.log := "Attempting to cancel job " thread_recvData.idx
@@ -426,8 +427,6 @@ thread_deleteIncompleteFiles(file)
 
 	if ( !fileExist(file) )
 		return false
-		
-	
 }
 	
 	

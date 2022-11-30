@@ -4,11 +4,11 @@
 detectHiddenWindows On
 setTitleMatchmode 3
 SetBatchLines, -1
-;SetKeyDelay, -1, -1
-;SetMouseDelay, -1
-;SetDefaultMouseSpeed, 0
-;SetWinDelay, -1
-;SetControlDelay, -1
+SetKeyDelay, -1, -1
+SetMouseDelay, -1
+SetDefaultMouseSpeed, 0
+SetWinDelay, -1
+SetControlDelay, -1
 SetWorkingDir %a_ScriptDir%
 
 /*
@@ -77,8 +77,13 @@ v1.08
 	- Fixed Verify option
 	- No need to hit enter to confirm a new output folder
 	- Limit output folder name to 255 characters
-	- Removed Add/Remove metadata options indefinitely
-	- Using a new version (0.249) of chdman.exe
+	- Removed Add/Remove metadata indefinitely
+
+v1.09
+	- Fixed select output folder button not launching explorer window
+	- Fixed sometimes showing multiple jobs in one progress slot
+	- Re-enabled Autohotkey 'speedups'
+	- Fixed line character being misrepresented in report
 */
 
 #Include SelectFolderEx.ahk
@@ -88,7 +93,7 @@ v1.08
 
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.08"
+CURRENT_VERSION := "1.09"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
@@ -779,11 +784,13 @@ checkNewOutputFolder()
 	gui 1:submit, nohide
 	gui 1:+ownDialogs
 
-	newFolder := editOutputFolder
 	if ( a_guiControl == "buttonBrowseOutput" ) {
-		newFolder := selectFolderEx(OUTPUT_FOLDER, "Select a folder to save converted files to", mainAppHWND)
-		newFolder := newFolder.selectedDir
+		selectFolder := selectFolderEx(OUTPUT_FOLDER, "Select a folder to save converted files to", mainAppHWND)
+		guiCtrl({editOutputFolder:selectFolder.selectedDir}) ; Assign to edit field if user selected
 	}
+
+	newFolder := editOutputFolder
+	
 	if ( !newFolder || newFolder == OUTPUT_FOLDER ) 
 		return
 
@@ -800,6 +807,7 @@ checkNewOutputFolder()
 		guiCtrl({editOutputFolder:OUTPUT_FOLDER})				; Edit reverts back to old value if new value invalid
 	} else {
 		OUTPUT_FOLDER := normalizePath(regExReplace(newFolder, "\\$"))
+
 		log("'" OUTPUT_FOLDER "' selected as output folder")
 		SB_SetText("'" OUTPUT_FOLDER "' selected as new output folder" , 1)
 		ini("write", "OUTPUT_FOLDER")
@@ -962,14 +970,14 @@ buttonStartJobs()
 	guiCtrl("moveDraw", {groupBoxProgress:"x5 y" (gPos.y + gPos.h) + 5 " h" job.workQueueSize*25 + 60})						; Move and resize progress groupbox
 	guiCtrl("moveDraw", {progressAll:"y" y, progressTextAll: "y" y+4}) 														; Set All Progress bar and it's text Y position
 	guiCtrl( {progressAll:0, progressTextAll:"0 jobs of " job.workTally.total " completed - 0%"})
-	guiToggle(["show", "enable"], ["groupBoxProgress", "progressAll", "progressTextAll"])									; Show total progress bars
+	guiToggle(["show", "enable"], ["groupBoxProgress", "progressAll", "progressTextAll"])									; Show total progress bar
 	y += 35
-	loop % job.workQueueSize {																	
+	loop % job.workQueueSize {																								; Show individua progress bars																
 		guiCtrl("moveDraw", {("progress" a_index):"y" y, ("progressText" a_index):"y" y+4, ("progressCancelButton" a_index):"y" y})	; Move the progress bars into place
 		y += 25
 		guiCtrl({("progress" a_index):0, ("progressText" a_index): ""})														; Clear the bars text and zero out percentage
 		guiToggle(["enable", "show"],["progress" a_index, "progressText" a_index, "progressCancelButton" a_index])			; Enable and show job progress bars
-		job.availPSlots.push(a_index)																						; Add available progress slots to queue
+		job.availPSlots.push(a_index)																						; Add available progress slots to queue																						
 	}
 	gui 1:show, autosize																									; Resize main window to fit progress bars
 	
@@ -980,8 +988,12 @@ buttonStartJobs()
 	job.started := true
 	job.startTime := a_TickCount
 
-	setTimer, jobStatusCheck, 500
+	jobStatusCheck() ; Check job status which will assign new jobs when there are slots available
 }
+
+
+
+
 	
 
 jobStatusCheck() 
@@ -1005,14 +1017,14 @@ jobStatusCheck()
 		run % runCmd ,,, pid																		; Run it
 		thisJob.pid := pid
 		loop {																	
-			sleep 150
-			sendAppMessage(JSON.Dump(thisJob), "ahk_class AutoHotkey ahk_pid " pid)
+			sleep 25
+			msg := JSON.Dump(thisJob)
+			sendAppMessage(msg, "ahk_class AutoHotkey ahk_pid " pid)
 			if ( thisJob.pid == job.msgData[thisJob.pSlot].pid )									; Wait for confirmation that msg was receieved				
 				break
 		}
 	}
 	
-	; Check for a timeout
 	loop % job.workQueueSize {			 									; Loop though jobs 
 		job.msgData[a_index].timeout += 2									; And to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receiveData() with each data receieve
 
@@ -1030,7 +1042,11 @@ jobStatusCheck()
 
 			cancelJob(job.msgData[a_index].pSlot) 							; So attempt to close the process associated with it -- it will Assign a "finished" flag
 		}
+		sleep 1
 	}
+
+	sleep 300																; This is a blocking function
+	jobStatusCheck()														; Check function again
 }
 
 	
@@ -1038,7 +1054,7 @@ finishJobs()
 {	
 	global job, APP_MAIN_NAME, PLAY_SONG_FINISHED
 	
-	setTimer, jobStatusCheck, off
+	setTimer, jobStatusCheck, off																		
 	job.started := false
 	job.endTime := a_Tickcount
 	guiToggle("hide", "buttonCancelAllJobs")
@@ -1051,7 +1067,7 @@ finishJobs()
 		refreshGUI()
 		msgBox, 16, % "Fatal Error", % job.workTally.haltedMsg "`n"
 	}
-	else {
+	else {																				
 		fnMsg := "Total number of jobs attempted: " job.workTally.total "`n"
 		fnMsg .= job.workTally.success ? job.FinPreTxt " sucessfully: " job.workTally.success "`n" : ""
 		fnMsg .= job.workTally.cancelled ? "Jobs cancelled by the user: " job.workTally.cancelled "`n" : ""
@@ -1133,6 +1149,7 @@ cancelAllJobs()
 	loop % job.workQueueSize {	
 		cancelJob(a_index)
 		log(" -- QUIT JOB " a_index " ---")
+		sleep 1
 	}
 	
 	while ( workQueue.length() > 0 ) {
@@ -1143,6 +1160,7 @@ cancelAllJobs()
 		job.workTally.finished++
 		percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
 		guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
+		sleep 1
 	}
 	job.started := false
 	return true	
@@ -1475,7 +1493,7 @@ createMainGUI()
 	gui 1:add, button, 		x+20 y267 w90 vbuttonRemoveInputFiles gselectInputFiles hwndGUIbutton4, % "Remove selection"
 
 	gui 1:add, text, 		x15 y305, % "Output Folder"
-	gui 1:add, button, 		x15 y324 w90 vbuttonBrowseOutput geditOutputFolder hwndGUIbutton8, % "Select a folder"
+	gui 1:add, button, 		x15 y324 w90 vbuttonBrowseOutput gcheckNewOutputFolder hwndGUIbutton8, % "Select a folder"
 	gui 1:add, text, 		x455 y335,% "Output file types: "
 	gui 1: font, Q5 s9 w700 c000000
 	gui 1:add, text, 		x+3 y335 w75 vOutputExtTypesText, % ""
@@ -1891,6 +1909,15 @@ stringUpper(str, title:=false)
 }
 
 
+; Join an array wilth delimiters and return a string
+strJoin(arr, delim) { 
+    result := ""
+    for each, val in arr
+        result .= val . delim
+    return rTrim(result, delim)
+}
+
+
 ; Check if value is in array
 ; ---------------------------
 inArray(cVal, arry) 
@@ -2117,7 +2144,7 @@ drawLine(num:=1)
 	if ( num < 1 )
 		return ""
 	loop % num
-		rtn .= "─"
+		rtn .= "-"
 	return rtn	
 }
 
