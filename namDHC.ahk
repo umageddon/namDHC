@@ -3,12 +3,12 @@
 #Persistent
 detectHiddenWindows On
 setTitleMatchmode 3
-SetBatchLines, -1
-SetKeyDelay, -1, -1
-SetMouseDelay, -1
-SetDefaultMouseSpeed, 0
-SetWinDelay, -1
-SetControlDelay, -1
+;SetBatchLines, -1
+;SetKeyDelay, -1, -1
+;SetMouseDelay, -1
+;SetDefaultMouseSpeed, 0
+;SetWinDelay, -1
+;SetControlDelay, -1
 SetWorkingDir %a_ScriptDir%
 
 /*
@@ -84,6 +84,13 @@ v1.09
 	- Fixed sometimes showing multiple jobs in one progress slot
 	- Re-enabled Autohotkey 'speedups'
 	- Fixed line character being misrepresented in report
+
+v1.10
+	- Fixed crashing and slowdown on some machines (Removed Autohotkey speed-ups)
+	- Fixed namDHC sometimes deleting the output file if it already existed
+	- Fixed a possible chdman timeout issue
+	- Fixed reporting to not show old reports from previous jobs
+
 */
 
 #Include SelectFolderEx.ahk
@@ -93,7 +100,7 @@ v1.09
 
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.09"
+CURRENT_VERSION := "1.10"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
@@ -953,12 +960,14 @@ buttonStartJobs()
 		return
 	}
 
+	
 	job.msgData := []
+	job.parseReport := []
 	job.allReport := ""
 	job.halted := false
 	job.started := false
-	job.workTally := {started:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:""}		; Set variables
-	job.workQueueSize := (job.workTally.total < JOB_QUEUE_SIZE)? job.workTally.total : JOB_QUEUE_SIZE								; If number of jobs is less then queue count, only display those progress bars
+	job.workTally := {started:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:""}		; Set job variables
+	job.workQueueSize := (job.workTally.total < JOB_QUEUE_SIZE)? job.workTally.total : JOB_QUEUE_SIZE											; If number of jobs is less then queue count, only display those progress bars
 
 	toggleMainMenu("hide")																									; Hide main menu bar (selecting menu when running jobs stops messages from being receieved from threads)
 	guiToggle("disable", "all")																								; Disable all controls while job is in progress
@@ -1026,7 +1035,7 @@ jobStatusCheck()
 	}
 	
 	loop % job.workQueueSize {			 									; Loop though jobs 
-		job.msgData[a_index].timeout += 2									; And to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receiveData() with each data receieve
+		job.msgData[a_index].timeout += 0.25								; And to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receiveData() with each data receieve
 
 		if ( job.msgData[a_index].status == "finished" )
 			continue
@@ -1041,11 +1050,11 @@ jobStatusCheck()
 			parseData(job.msgData[a_index])
 
 			cancelJob(job.msgData[a_index].pSlot) 							; So attempt to close the process associated with it -- it will Assign a "finished" flag
+			sleep 1
 		}
-		sleep 1
 	}
 
-	sleep 300																; This is a blocking function
+	sleep 250																; This is a blocking function
 	jobStatusCheck()														; Check function again
 }
 
@@ -1094,8 +1103,10 @@ finishJobs()
 			controlFocus,, REPORT
 			return
 		}
-		else
+		else {
 			5guiClose()
+			return
+		}
 	}
 }
 
@@ -1108,6 +1119,7 @@ finishJobs()
 {		
 	gui 5: destroy
 	refreshGUI()
+	return
 }
 
 
@@ -1276,7 +1288,6 @@ receiveData(data1, data2)
 parseData(recvData) 
 {		
 	global job, REMOVE_FILE_ENTRY_AFTER_FINISH
-	static report := []
 	
 	job.msgData[recvData.pSlot] := recvData				; Assign globally so we can use anywhere in script - mainly to kill job and check on timeout activity
 	job.msgData[recvData.pSlot].timeout := 0			; Zero out timeout because we know this job is active
@@ -1285,9 +1296,9 @@ parseData(recvData)
 		log("Job " recvData.idx " - " recvData.log)
 	
 	if ( recvData.report ) {
-		if ( !report[recvData.idx] )
-			report[recvData.idx] := "`n`n" stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(77) "`n"
-		report[recvData.idx] .= recvData.report		; Static variable adds to end report data
+		if ( !job.parseReport[recvData.idx] )
+			job.parseReport[recvData.idx] := "`n`n" stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(77) "`n"
+		job.parseReport[recvData.idx] .= recvData.report
 	}
 
 	switch recvData.status {
@@ -1326,7 +1337,7 @@ parseData(recvData)
 			SB_SetText("Job " job.msgData[pSlot].idx " cancelled", 1)
 		
 		case "finished":
-			job.allReport .= report[recvData.idx]
+			job.allReport .= job.parseReport[recvData.idx]
 			job.workTally.finished++
 			percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
 			guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })

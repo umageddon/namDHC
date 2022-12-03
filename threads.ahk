@@ -136,10 +136,12 @@ rtnError := thread_checkForErrors(output.msg)
 
 ; CHDMAN was not successfull - Errors were detected
 ; -------------------------------------------------------------------------------------------------------------------
-if ( (rtnError && !inStr(rtnError,"file already exists")) || (inStr(rtnError, "file already exists") && !inStr(thread_recvData.cmdOpts, "-f")) ) {
+if ( rtnError ) {
 	
-	if ( !thread_recvData.keepIncomplete && rtnError <> "file already exists" ) {			; Delete incomplete output files, but dont delete "incomplete" output file if the error is that the file exists
+	if ( inStr(rtnError, "file already exists") == 0 && !thread_recvData.keepIncomplete ) {			; Delete incomplete output files, only delete files that arent "file exists" error
+		
 		delFiles := deleteFilesReturnList(thread_recvData.toFileFull)
+
 		thread_sendData.log := delFiles ? "Deleted incomplete file(s): " regExReplace(delFiles, " ,$") : "Error deleting incomplete file(s)!"
 		thread_sendData.report := thread_sendData.log "`n"
 		thread_sendData.progress := 100
@@ -157,9 +159,8 @@ if ( (rtnError && !inStr(rtnError,"file already exists")) || (inStr(rtnError, "f
 	
 	thread_finishJob()
 	exitApp
+
 }
-
-
 
 ; CHDMAN was successfull - No errors were detected
 ; -------------------------------------------------------------------------------------------------------------------
@@ -354,7 +355,8 @@ thread_receiveData(wParam, lParam)
 	sleep 1
 	thread_recvData := JSON.Load(recv)
 	
-	if ( thread_recvData.KILLPROCESS == "true" ) {
+	if ( thread_recvData.KILLPROCESS == "true" && thread_recvData.chdmanPID ) {
+		
 		thread_sendData.log := "Attempting to cancel job " thread_recvData.idx
 		thread_sendData.progressText := "Cancelling -  " thread_recvData.workingTitle
 		thread_sendData.progress := 0
