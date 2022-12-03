@@ -86,7 +86,7 @@ v1.09
 	- Fixed line character being misrepresented in report
 
 v1.10
-	- Fixed crashing and slowdown on some machines (Removed Autohotkey speed-ups)
+	- Fixed crashing and slowdown on some machines (Removed Autohotkey speedups)
 	- Fixed namDHC sometimes deleting the output file if it already existed
 	- Fixed a possible chdman timeout issue
 	- Fixed reporting to not show old reports from previous jobs
