@@ -3,104 +3,113 @@
 #Persistent
 detectHiddenWindows On
 setTitleMatchmode 3
-;SetBatchLines, -1
-;SetKeyDelay, -1, -1
-;SetMouseDelay, -1
-;SetDefaultMouseSpeed, 0
-;SetWinDelay, -1
-;SetControlDelay, -1
 SetWorkingDir %a_ScriptDir%
 
-/*
-v1.00
-	- Initial release
-
-v1.01
-	- Added ISO input media support
-	- Minor fixes
-
-v1.02
-	- Removed superfluous code
-	- Some spelling mistakes fixed
-	- Minor GUI changes
-
-v1.03
-	- Fixed Cancel all jobs button
-	- Fixed output folder editfield allowing invalid characters
-	- Fixed files only being removed from listview after successful operation (when selected)
-	- Minor GUI bugs fixed
-	- GUI changes
-	- Added time elapsed to report
-	- Changed about window
-
-v1.05
-	- Added update functionality
-	- GUI changes
-	- More GUI changes
-	- Fixed issue extracting or creating all formats instead of selected 
-	- Fixed JSON issues
-	- Bug fixes
-	
-v1.06
-	- Allows creation of multiple formats during a single job.
-	  Formats will be added to the file and directory names in parenthesis.
-	  Example of files from a PSX game with both TOC and CUE formats selected for output:
-		PSXGAME (TOC).toc
-		PSXGAME (TOC).bin
-		PSXGAME (CUE).bin
-		PSXGAME (CUE).cue
-	- User will be prompted to rename any duplicate output files
-	- Changed the finished job sound to play media instead of just beeps
-	- Fixed main menu not hiding during job processes
-	- Updater wont automatically update even when selecting no
-	- Bugfixes, GUI changes n' stuff
-	
-v1.07
-	There are issues with cancelling running jobs with this release... If I find time, Ill try and look deeper into the issue.
-
-	- Added zip file support. 
-	  NOTE: Folders & multiple formats within zipfiles are unsupported. namDHC will use only the first supported file that it finds within in each zipfile
-	- Changed quit routine
-	- Changed error handling for output chd files that already exist
-	- Changed file read functions
-	- Fixed namDHC won't ask about duplicate files when verifying or getting info from CHD's
-	- Fixed Folder and file browsing shows input extensions that aren't actually selected
-	- Fixed timeout monitoring
-	- Fixed some race conditions
-	- Lots of code change
-	- GUI changes n' stuff
-	- Changed JSON library again (hopefully last time)
-	- Having issues with script pausing/hanging after cancel command is sent to thread
-
-
-v1.08
-	- Fixed Verify option
-	- No need to hit enter to confirm a new output folder
-	- Limit output folder name to 255 characters
-	- Removed Add/Remove metadata indefinitely
-
-v1.09
-	- Fixed select output folder button not launching explorer window
-	- Fixed sometimes showing multiple jobs in one progress slot
-	- Re-enabled Autohotkey 'speedups'
-	- Fixed line character being misrepresented in report
-
-v1.10
-	- Possible fix crashing and slowdown on some machines (Removed Autohotkey speedups)
-	- Fixed namDHC sometimes deleting the output file if it already existed
-	- Fixed a possible chdman timeout issue
-	- Fixed reporting to not show old reports from previous jobs
-
-*/
 
 #Include SelectFolderEx.ahk
 #Include ClassImageButton.ahk
 #Include ConsoleClass.ahk
 #Include JSON.ahk
 
+
+VER_HISTORY =
+(
+v1.00
+- Initial release
+
+
+v1.01
+- Added ISO input media support
+- Minor fixes
+
+
+v1.02
+- Removed superfluous code
+- Some spelling mistakes fixed
+- Minor GUI changes
+
+
+v1.03
+- Fixed Cancel all jobs button
+- Fixed output folder editfield allowing invalid characters
+- Fixed files only being removed from listview after successful operation (when selected)
+- Minor GUI bugs fixed
+- GUI changes
+- Added time elapsed to report
+- Changed about window
+
+
+v1.05
+- Added update functionality
+- GUI changes
+- More GUI changes
+- Fixed issue extracting or creating all formats instead of selected 
+- Fixed JSON issues
+- Bug fixes
+
+
+v1.06
+- Allows creation of multiple formats during a single job.
+  Formats will be added to the file and directory names in parenthesis.
+  Example of files from a PSX game with both TOC and CUE formats selected for output:
+	PSXGAME (TOC).toc
+	PSXGAME (TOC).bin
+	PSXGAME (CUE).bin
+	PSXGAME (CUE).cue
+- User will be prompted to rename any duplicate output files
+- Changed the finished job sound to play media instead of just beeps
+- Fixed main menu not hiding during job processes
+- Updater wont automatically update even when selecting no
+- Bugfixes, GUI changes n' stuff
+
+
+v1.07
+- Added zip file support
+  NOTE:  Folders & multiple formats within zip files are unsupported. 
+         namDHC will only uncompress the first supported file that it finds within in each zipfile
+- Changed quit routine
+- Changed error handling for output chd files that already exist
+- Changed file read functions
+- Fixed namDHC won't ask about duplicate files when verifying or getting info from CHD's
+- Fixed Folder and file browsing shows input extensions that aren't actually selected
+- Fixed timeout monitoring
+- Fixed some race conditions
+- GUI changes n' stuff
+- Changed JSON library again (hopefully last time)
+- Having issues with script pausing/hanging after cancel command is sent to thread
+
+
+v1.08
+- Fixed Verify option
+- No need to hit enter to confirm a new output folder
+- Limit output folder name to 255 characters
+- Removed Add/Remove metadata indefinitely
+
+
+v1.09
+- Fixed select output folder button not launching explorer window
+- Fixed sometimes showing multiple jobs in one progress slot
+- Re-enabled Autohotkey 'speedups'
+- Fixed line character being misrepresented in report
+
+
+v1.10
+- Possible fix crashing and slowdown on some machines (Removed Autohotkey speedups :P)
+- Fixed namDHC sometimes deleting the output file if it already existed
+- Fixed a possible chdman timeout issue
+- Fixed reporting to not show old reports from previous jobs
+
+
+v1.11
+- Possible crash fixes (?)
+- Fixed zip files not being cleared from list after a successful job
+- Slight speed improvement and (hopefully) improved reliability when cancelling jobs
+)
+
+
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.10"
+CURRENT_VERSION := "1.11"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
@@ -111,7 +120,7 @@ APP_VERBOSE_NAME := APP_MAIN_NAME " - Verbose"
 APP_RUN_JOB_NAME := APP_MAIN_NAME " - Job"
 APP_RUN_CHDMAN_NAME := APP_RUN_JOB_NAME " - chdman"
 APP_RUN_CONSOLE_NAME := APP_RUN_JOB_NAME " - Console"
-TIMEOUT_SEC := 25
+TIMEOUT_SEC := 20
 WAIT_TIME_CONSOLE_SEC := 1
 JOB_QUEUE_SIZE := 3
 JOB_QUEUE_SIZE_LIMIT := 10
@@ -316,12 +325,15 @@ menuSelected()
 			gui 4: add, text, x100 y17, % " v" CURRENT_VERSION
 			gui 4: font, s10 Q5 w400 c000000
 			gui 4: add, text, x10 y35, % "A Windows frontend for the MAME CHDMAN tool"
-			gui 4: add, button, x10 y70 w130 h22 gcheckForUpdates, % "Check for updates"
-			gui 4: add, link, x10 y110, Github: <a href="https://github.com/umageddon/namDHC">https://github.com/umageddon/namDHC</a>
-			gui 4: add, link, x10 y130, MAME Info: <a href="https://www.mamedev.org/">https://www.mamedev.org/</a>
+			gui 4: add, button, x10 y65 w130 h22 gcheckForUpdates, % "Check for updates"
+
+			gui 4: add, text, x10 y100, % "History"
+			gui 4: add, edit, x10 y120 h200 w775, % VER_HISTORY
+			gui 4: add, link, x10 y340, Github: <a href="https://github.com/umageddon/namDHC">https://github.com/umageddon/namDHC</a>
+			gui 4: add, link, x10 y360, MAME Info: <a href="https://www.mamedev.org/">https://www.mamedev.org/</a>
 			gui 4: font, s9 Q5 w400 c000000
-			gui 4: add, text, x10 y165, % "(C) Copyright 2022 Umageddon"
-			gui 4: show, w500 center, About
+			gui 4: add, text, x10 y390, % "(C) Copyright 2022 Umageddon"
+			gui 4: show, w800 center, About
 			Gui 4:+LastFound +AlwaysOnTop +ToolWindow
 			controlFocus,, About 												; Removes outline around html anchor
 			return
@@ -961,6 +973,8 @@ buttonStartJobs()
 	}
 
 	
+	job.workTally := {}
+	job.availPSlots := []
 	job.msgData := []
 	job.parseReport := []
 	job.allReport := ""
@@ -981,6 +995,7 @@ buttonStartJobs()
 	guiCtrl( {progressAll:0, progressTextAll:"0 jobs of " job.workTally.total " completed - 0%"})
 	guiToggle(["show", "enable"], ["groupBoxProgress", "progressAll", "progressTextAll"])									; Show total progress bar
 	y += 35
+	
 	loop % job.workQueueSize {																								; Show individua progress bars																
 		guiCtrl("moveDraw", {("progress" a_index):"y" y, ("progressText" a_index):"y" y+4, ("progressCancelButton" a_index):"y" y})	; Move the progress bars into place
 		y += 25
@@ -988,82 +1003,65 @@ buttonStartJobs()
 		guiToggle(["enable", "show"],["progress" a_index, "progressText" a_index, "progressCancelButton" a_index])			; Enable and show job progress bars
 		job.availPSlots.push(a_index)																						; Add available progress slots to queue																						
 	}
-	gui 1:show, autosize																									; Resize main window to fit progress bars
 	
-	onMessage(0x004A, "receiveData")																						; Receive messages from threads
+	gui 1:show, autosize																									; Resize main window to fit progress bars
+		
 	log(job.workTally.total " " stringUpper(job.Cmd) " jobs starting ...")
 	SB_SetText(job.workTally.total " " stringUpper(job.Cmd) " jobs started" , 1)
 
 	job.started := true
 	job.startTime := a_TickCount
-
-	jobStatusCheck() ; Check job status which will assign new jobs when there are slots available
-}
-
-
-
-
+	onMessage(0x004A, "receiveData")											; Receive messages from threads
 	
+	; Job loop
+	while ( job.workTally.finished < job.workTally.total ) { 					; Loop while # of finished jobs are less then job.workTally.total
 
-jobStatusCheck() 
-{
-	global job, SHOW_JOB_CONSOLE, TIMEOUT_SEC
-
-	if ( job.workTally.finished == job.workTally.total || job.started == false ) {					; Job queue has finished
-		finishJobs()
-		return
-	}
-	
-	if ( job.availPSlots.length() > 0 && job.workQueue.count() > 0 ) {
+		if ( job.started == false )
+			break
 		
-		thisJob := job.workQueue.removeAt(1)														; Grab the first job from the work queue and assign parameters to variable
-		
-		thisJob.pSlot := job.availPSlots.removeAt(1)												; Assign the progress bar a y position from available queue
-		job.msgData[thisJob.pSlot] := {}
-		job.msgData[a_index].timeout := 0
-
-		runCmd := a_ScriptName " threadMode " (SHOW_JOB_CONSOLE == "yes" ? "console" : "")			; "threadmode" flag tells script to run this script as a thread
-		run % runCmd ,,, pid																		; Run it
-		thisJob.pid := pid
-		loop {																	
-			sleep 25
-			msg := JSON.Dump(thisJob)
-			sendAppMessage(msg, "ahk_class AutoHotkey ahk_pid " pid)
-			if ( thisJob.pid == job.msgData[thisJob.pSlot].pid )									; Wait for confirmation that msg was receieved				
-				break
-		}
-	}
-	
-	loop % job.workQueueSize {			 									; Loop though jobs 
-		job.msgData[a_index].timeout += 0.25								; And to job timeout counter --  job.msgData[a_index].timeout is automatically zeroed out in receiveData() with each data receieve
-
-		if ( job.msgData[a_index].status == "finished" )
-			continue
-		
-		if ( job.msgData[a_index].timeout >= TIMEOUT_SEC ) {				; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
+		if ( job.availPSlots.length() > 0 && job.workQueue.count() > 0 ) { 		; If there is another queued job and there is a slot available 
 			
-			job.msgData[a_index].status := "error"							; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
-			job.msgData[a_index].log := "Error: Job timed out"
-			job.msgData[a_index].report := "`nError: Job timed out`n`n`n"
-			job.msgData[a_index].progress := 100
-			job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
-			parseData(job.msgData[a_index])
+			thisJob := job.workQueue.removeAt(1)														; Grab the first job from the work queue and assign parameters to variable
+			thisJob.pSlot := job.availPSlots.removeAt(1)												; Assign the progress bar a y position from available queue
 
-			cancelJob(job.msgData[a_index].pSlot) 							; So attempt to close the process associated with it -- it will Assign a "finished" flag
-			sleep 1
+			job.msgData[thisJob.pSlot] := {}
+			
+			runCmd := a_ScriptName " threadMode " (SHOW_JOB_CONSOLE == "yes" ? "console" : "")			; "threadmode" flag tells script to run this script as a thread
+			run % runCmd ,,, pid																		; Run it
+			thisJob.pid := pid
+
+			while ( thisJob.pid <> job.msgData[thisJob.pSlot].pid ) {	; Wait for confirmation that msg was receieved																			
+				msg := JSON.Dump(thisJob)
+				sendAppMessage(msg, "ahk_class AutoHotkey ahk_pid " pid)
+				sleep 250	
+			}
+			
+			job.msgData[thisJob.pSlot].timeout := a_TickCount
 		}
-	}
+		
+		loop % job.workQueueSize {			 									; Check for timeouts 
+			
+			if ( job.msgData[a_index].status == "finished" || job.msgData[a_index].status == "cancelled" )
+				continue
+			
+			if ( (a_TickCount - job.msgData[a_index].timeout) > (TIMEOUT_SEC*1000) ) {					; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
+				
+				job.msgData[a_index].status := "error"							; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
+				job.msgData[a_index].log := "Error: Job timed out"
+				job.msgData[a_index].report := "`nError: Job timed out`n`n`n"
+				job.msgData[a_index].progress := 100
+				job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
+				parseData(job.msgData[a_index])
+				
+				cancelJob(job.msgData[a_index].pSlot) 							; And attempt to close the process associated with it
+			}
+		}
+		
+		sleep 1000
+	} ; end job loop
 
-	sleep 250																; This is a blocking function
-	jobStatusCheck()														; Check function again
-}
 
-	
-finishJobs() 
-{	
-	global job, APP_MAIN_NAME, PLAY_SONG_FINISHED
-	
-	setTimer, jobStatusCheck, off																		
+	; Finished all jobs			
 	job.started := false
 	job.endTime := a_Tickcount
 	guiToggle("hide", "buttonCancelAllJobs")
@@ -1155,25 +1153,22 @@ cancelAllJobs()
 	ifMsgBox No
 		return false
 	
-	workQueue := job.workQueue								; Create alias of workQueue to work with so the job-check queue loop wont trigger 'finished all jobs' too early
-	job.workQueue := []										; Clear the real work Queue now
-
 	loop % job.workQueueSize {	
 		cancelJob(a_index)
-		log(" -- QUIT JOB " a_index " ---")
 		sleep 1
 	}
 	
-	while ( workQueue.length() > 0 ) {
-		thisJob := workQueue.removeAt(1)
+	loop % job.workQueue.length() {
+		thisJob := job.workQueue.removeAt(1)
 		job.allReport .= "`n`n" stringUpper(thisJob.cmd) " - " thisJob.workingTitle "`n" drawLine(77) "`n"
-		job.allReport .= "`nJob cancelled by user`n"
+		job.allReport .= "Job cancelled by user`n"
 		job.workTally.cancelled++
 		job.workTally.finished++
 		percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
 		guiCtrl({progressAll:percentAll, progressTextAll:job.workTally.finished " jobs of " job.workTally.total " completed " (job.workTally.withError ? "(" job.workTally.withError " error" (job.workTally.withError>1? "s)":")") : "")" - " percentAll "%" })
-		sleep 1
 	}
+	
+	job.workQueue := []										; To make sure we are clear
 	job.started := false
 	return true	
 }
@@ -1188,8 +1183,6 @@ cancelJob(pSlot)
 	
 	if ( !job.msgData[pSlot].pid || job.msgData[pSlot].status == "finished" )
 		return
-	
-	log("Job " job.msgData[pSlot].idx " - Attempting to Cancel  " job.msgData[pSlot].workingTitle)
 	
 	guiCtrl({("progress" recvData.pSlot):0})
 	guiCtrl({("progressText" recvData.pSlot):"Cancelling -  " job.msgData[pSlot].workingTitle})
@@ -1290,7 +1283,7 @@ parseData(recvData)
 	global job, REMOVE_FILE_ENTRY_AFTER_FINISH
 	
 	job.msgData[recvData.pSlot] := recvData				; Assign globally so we can use anywhere in script - mainly to kill job and check on timeout activity
-	job.msgData[recvData.pSlot].timeout := 0			; Zero out timeout because we know this job is active
+	job.msgData[recvData.pSlot].timeout := a_Tickcount	; Set to current time -- We know this job is active
 	
 	if ( recvData.log )
 		log("Job " recvData.idx " - " recvData.log)
@@ -1325,7 +1318,8 @@ parseData(recvData)
 			if ( REMOVE_FILE_ENTRY_AFTER_FINISH == "yes" ) {
 				removeFromArray(recvData.fromFileFull, job.scannedFiles[recvData.cmd])
 				loop % LV_GetCount() {												; Clear finished files from scanned files
-					if ( LV_GetText2(a_index) == recvData.fromFileFull ) {
+					LV_GetText(rtn, a_index)
+					if ( rtn == recvData.fromFileFull ) {
 						LV_Delete(a_index)
 						break
 					}
@@ -1729,7 +1723,7 @@ sendAppMessage(stringToSend, targetScriptTitle)
   DetectHiddenWindows %Prev_DetectHiddenWindows%
   SetTitleMatchMode %Prev_TitleMatchMode%
   return errorLevel
- }
+}
 
 strPutVar(string, ByRef var, encoding)
 {
@@ -2180,9 +2174,8 @@ fileDelete(file, attempts:=5, sleepdelay:=50)
 		fileDelete, % file
 		sleep % sleepdelay
 		f := fileExist(file)
-		if ( !f || f == "D" )	{							; Success
+		if ( !f || f == "D" )							; Success
 			return true
-		}
 	}
 	return false
 }
@@ -2209,7 +2202,7 @@ deleteFilesReturnList(file)
 {
 	delFiles := ""
 	for idx, thisFile in getFilesFromCUEGDITOC(file)
-		delFiles .= fileDelete(thisFile, 3, 25) ? thisFile ", " : ""
+		delFiles .= (fileDelete(thisFile, 3, 100) ? thisFile ", " : "")
 	return delFiles
 }
 
@@ -2411,7 +2404,7 @@ checkForUpdates(arg1:="", userClick:=false)
 			batchText := "@timeout /t 1 /nobreak > NUL`r`n@del """ a_ScriptFullPath """ > NUL`r`n@copy """ fileTemp """ """ a_ScriptFullPath """ > NUL`r`n@start " a_ScriptFullPath "`r`n@exit 0`r`n"
 			
 			createFolder(DIR_TEMP)
-			fileDelete(fileTemp, 3, 50) 						; delete if temp file already exists
+			fileDelete(fileTemp, 3, 100) 						; delete if temp file already exists
 			
 			urlDownloadToFile, % namDHCBinURL, % fileTemp
 			if ( !fileExist(fileTemp) ) {
@@ -2420,7 +2413,7 @@ checkForUpdates(arg1:="", userClick:=false)
 				return
 			}
 			
-			fileDelete(batchFile, 3, 50) ; Delete before creating a new batch file
+			fileDelete(batchFile, 3, 100) ; Delete before creating a new batch file
 			fileAppend, % batchText, % batchFile
 			sleep 50
 			

@@ -3,19 +3,23 @@ onMessage(0x4a, "thread_receiveData")
 gui 1:show, hide, % APP_RUN_JOB_NAME
 menu tray, noIcon
 
-thread_log("Started ... ")
+APP_MAIN_HWND := winExist(APP_MAIN_NAME)
+thread_recvData := {}
+thread_sendData := {}
 
-thread_recvData := {}, thread_sendData := {}, mainAppHWND := winExist(APP_MAIN_NAME)
+thread_log("Started ... ")
 
 ; Set up console window
 ; --------------------------------------------------------------------------------------------
 console := new Console()
 console.setConsoleTitle(APP_RUN_CONSOLE_NAME)
+
 ;winSet, Style, ^0x80000 , % "ahk_id " console.getConsoleHWND() ; Remove close button on window
+
 if ( SHOW_JOB_CONSOLE == "no" ) 												; Hide console
 	winHide , % "ahk_id " console.getConsoleHWND()
 
-; Handshakiing
+; Handshaking
 ; --------------------------------------------------------------------------------------------
 thread_log("Handshaking with " APP_MAIN_NAME "... ")
 while ( !thread_recvData.cmd && !thread_recvData.idx ) {
@@ -66,7 +70,7 @@ if ( thread_recvData.outputFolder ) {
 ; Zipfile was supplied as source
 ; -------------------------------------------------------------------------------------------------------------------
 if ( thread_recvData.fromFileExt == "zip" ) {
-	sleep 50
+
 	thread_sendData.status := "unzipping"
 	thread_sendData.progress := 0
 	thread_sendData.progressText := "Unzipping  -  " thread_recvData.fromFile
@@ -88,13 +92,15 @@ if ( thread_recvData.fromFileExt == "zip" ) {
 		
 			thread_log("Unzipped " thread_recvData.fromFileFull " successfully`n")		
 			
-			thread_recvData.fromFileFull	:= fileUnzip.full
-			thread_recvData.fromFile		:= fileUnzip.file
-			thread_recvData.fromFileNoExt	:= fileUnzip.noExt
-			thread_recvData.fromFileExt	:= fileUnzip.ext
+			thread_recvData.unzipped := {}
+			thread_recvData.unzipped.fromFileFull := fileUnzip.full
+			thread_recvData.unzipped.fromFile := fileUnzip.file
+			thread_recvData.unzipped.fromFileNoExt := fileUnzip.noExt
+			thread_recvData.unzipped.fromFileExt := fileUnzip.ext
+			
 			mergeObj(thread_recvData, thread_sendData)
 		}
-		else error := ["Error unzipping file '" thread_recvData.fromFileFull "'", "Error unzipping file  -  " thread_recvData.fromFileFull]
+		else error := ["Error unzipping file '" thread_recvData.unzipped.fromFileFull "'", "Error unzipping file  -  " thread_recvData.unzipped.fromFileFull]
 	}
 	else error := ["Error creating temporary directory '" DIR_TEMP "\" thread_recvData.fromFileNoExt "'", "Error creating temp directory"]
 	
@@ -116,9 +122,9 @@ if ( thread_recvData.fromFileExt == "zip" ) {
 	}
 }
 
-sleep 50
+sleep 10
 	
-fromFile := thread_recvData.fromFileFull ? """" thread_recvData.fromFileFull """" : ""
+fromFile := thread_recvData.unzipped.fromFileFull ? """" thread_recvData.unzipped.fromFileFull """" : (thread_recvData.fromFileFull ? """" thread_recvData.fromFileFull """" : "" )
 toFile := thread_recvData.toFileFull ? """" thread_recvData.toFileFull """" : ""
 cmdLine := CHDMAN_FILE_LOC . " " . thread_recvData.cmd . thread_recvData.cmdOpts . " -v" . (fromFile ? " -i " fromFile : "") . (toFile ? " -o " toFile : "")
 thread_log("`nCommand line: " cmdLine "`n`n")
@@ -129,7 +135,7 @@ thread_sendData.progressText := "Starting job  -  " thread_recvData.workingTitle
 thread_sendData()
 
 setTimer, thread_timeout, % (TIMEOUT_SEC*1000) 						; Set timeout timer
-output := runCMD(cmdLine, thread_recvData.workingDir, "CP0", "thread_parseCHDMANOutput")
+output := runCMD(cmdLine, thread_recvData.workingDir, "CP0", "thread_parseCHDMANOutput") ; thread_parseCHDMANOutput is the function that will be called for STDOUT 
 setTimer, thread_timeout, off
 
 rtnError := thread_checkForErrors(output.msg)
@@ -142,7 +148,7 @@ if ( rtnError ) {
 		
 		delFiles := deleteFilesReturnList(thread_recvData.toFileFull)
 
-		thread_sendData.log := delFiles ? "Deleted incomplete file(s): " regExReplace(delFiles, " ,$") : "Error deleting incomplete file(s)!"
+		thread_sendData.log := delFiles <> "" ? "Deleted incomplete file(s): " regExReplace(delFiles, " ,$") : "Error deleting incomplete file(s)!"
 		thread_sendData.report := thread_sendData.log "`n"
 		thread_sendData.progress := 100
 		thread_sendData()
@@ -166,13 +172,19 @@ if ( rtnError ) {
 ; -------------------------------------------------------------------------------------------------------------------
 
 if ( fileExist(tempZipDirectory) ) 
-	thread_deleteDir(tempZipDirectory, 1) 								; Always delete temp zip directory and all of its contents
+	thread_deleteDir(tempZipDirectory, 1) 														; Always delete temp zip directory and all of its contents
 
-if ( thread_recvData.deleteInputFiles && fileExist(thread_recvData.fromFileFull) ) 	; Delete input files if requested
-	thread_deleteFiles(thread_recvData.fromFileFull)
+if ( thread_recvData.deleteInputFiles ) {
+	
+	if ( fileExist(thread_recvData.unzipped.fromFileFull) ) 	; Delete input files of unzipped if requested (and they exist)
+		thread_deleteFiles(thread_recvData.unzipped.fromFileFull)
 
-if ( thread_recvData.deleteInputDir && fileExist(thread_recvData.workingDir) == "D" )	; Delete input folder only if its not empty
-	thread_deleteDir(thread_recvData.workingDir)	
+	if ( fileExist(thread_recvData.fromFileFull) ) 				; Delete input source files if requested
+		thread_deleteFiles(thread_recvData.fromFileFull)
+
+	if ( fileExist(thread_recvData.workingDir) == "D" )			; Delete input folder only if its not empty
+		thread_deleteDir(thread_recvData.workingDir)	
+}
 
 if ( inStr(thread_recvData.cmd, "verify") )
 	suffx := "verified"
@@ -242,7 +254,8 @@ thread_checkForErrors(msg)
 ;-------------------------------------------------------------------------
 thread_parseCHDMANOutput(data, lineNum, cPID) 													
 { 																	
-	global thread_sendData, thread_recvData, CHDMAN_VERSION_ARRAY, APP_MAIN_NAME, TIMEOUT_SEC
+	;global thread_sendData, thread_recvData, CHDMAN_VERSION_ARRAY, APP_MAIN_NAME, TIMEOUT_SEC
+	global
 	thread_sendData.chdmanPID := cPID ? cPID : ""
 
 	setTimer, thread_timeout, % (TIMEOUT_SEC*1000) 						; Reset timeout timer 
@@ -310,18 +323,18 @@ thread_parseCHDMANOutput(data, lineNum, cPID)
 */
 thread_sendData(msg:="") 
 {
-	global thread_recvData, thread_sendData,  APP_MAIN_NAME, mainAppHWND
+	global
 
 	if ( msg == false )
 		return
 	
-	sleep 50
+	sleep 10
 	msg := (msg=="") ? thread_sendData : msg
-	sendAppMessage(JSON.Dump(msg), APP_MAIN_NAME " ahk_id " mainAppHWND)										; Send back the data we've recieved plus any other new info
+	sendAppMessage(JSON.Dump(msg), APP_MAIN_NAME " ahk_id " APP_MAIN_HWND)										; Send back the data we've recieved plus any other new info
 	thread_sendData.log := ""
 	thread_sendData.report := ""
 	thread_sendData.status := ""
-	sleep 50
+	sleep 10
 }
 
 
@@ -350,23 +363,36 @@ Recieve messages from host
 thread_receiveData(wParam, lParam) 
 {
 	global
-	
-	recv := strGet(numGet(lParam + 2*A_PtrSize),, "utf-8")
-	sleep 1
-	thread_recvData := JSON.Load(recv)
+
+	thread_recvData := JSON.Load( strGet(numGet(lParam + 2*A_PtrSize),, "utf-8") )
 	
 	if ( thread_recvData.KILLPROCESS == "true" && thread_recvData.chdmanPID ) {
 		
-		thread_sendData.log := "Attempting to cancel job " thread_recvData.idx
+		thread_sendData.log := "Attempting to cancel " . thread_recvData.workingTitle
 		thread_sendData.progressText := "Cancelling -  " thread_recvData.workingTitle
 		thread_sendData.progress := 0
 		thread_sendData()
 		
 		thread_log("`nThread cancel signal receieved`n")
+
+		winClose, % "ahk_pid " . thread_recvData.chdmanPID
 		
-		process, close, % thread_recvData.chdmanPID
-		;process, WaitClose, % thread_recvData.chdmanPID, 3000
-		if ( errorlevel == 0 ) {
+		process, Exist, % thread_recvData.chdmanPID
+		if ( errorLevel <> 0 ) { ; Process exists
+			sleep 50
+			winWaitClose, % "ahk_pid " . thread_recvData.chdmanPID, , 1
+
+			process, Exist, % thread_recvData.chdmanPID
+			if ( errorLevel <> 0 ) { ; Process exists
+				sleep 50
+				process, close, % thread_recvData.chdmanPID
+				sleep 50
+				process, Exist, % thread_recvData.chdmanPID
+				sleep 50
+			}
+		}
+
+		if ( errorlevel <> 0 ) { ; Process exists
 			thread_sendData.log := "Couldn't cancel " thread_recvData.workingTitle " - Error closing job"
 			thread_sendData.progressText := "Couldn't cancel -  " thread_recvData.workingTitle
 			thread_sendData.progress := 100
@@ -381,7 +407,7 @@ thread_receiveData(wParam, lParam)
 			
 			if ( !thread_recvData.keepIncomplete && fileExist(thread_recvData.toFileFull) )	{						; Delete incomplete output files if asked to keep 
 				delFiles := deleteFilesReturnList(thread_recvData.toFileFull)
-				thread_sendData.log := delFiles ? "Deleted incomplete file(s): " regExReplace(delFiles, " ,$") : "Error deleting incomplete file(s)!"
+				thread_sendData.log := delFiles <> "" ? "Deleted incomplete file(s): " regExReplace(delFiles, " ,$") : "Error deleting incomplete file(s)!"
 				thread_sendData.report := job.msgData[pSlot].log "`n"
 				thread_sendData.progress := 100
 				thread_sendData()
@@ -390,12 +416,12 @@ thread_receiveData(wParam, lParam)
 			thread_sendData.log := "Job " thread_recvData.idx " cancelled by user"
 			thread_sendData.progressText := "Cancelled -  " thread_recvData.workingTitle
 			thread_sendData.progress := 100
-			thread_sendData.report := "`nJob cancelled by user`n"
+			thread_sendData.report := "Job cancelled by user`n"
 			thread_sendData()										
 			
 			thread_finishJob()
 			
-			thread_log("`n`nJob cancelled by user`n")
+			thread_log("`nJob cancelled by user`n")
 			exitApp
 		}
 	}
@@ -535,7 +561,7 @@ thread_finishJob()
 {
 	global
 	
-	sleep 50
+	sleep 10
 	thread_sendData.status := "finished"
 	thread_sendData.progress := 100
 	thread_log(thread_sendData.log? thread_sendData.log "`nFinished!":"")
