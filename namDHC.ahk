@@ -104,12 +104,16 @@ v1.11
 - Possible crash fixes (?)
 - Fixed zip files not being cleared from list after a successful job
 - Slight speed improvement and (hopefully) improved reliability when cancelling jobs
+
+v1.12
+- Workaround to at least get the options crammed in view - for those folks who use higher DPI settings
+ Thanks TFWol 
 )
 
 
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.11"
+CURRENT_VERSION := "1.12"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
@@ -1459,9 +1463,9 @@ createMainGUI()
 {
 	global
 	local idx, key, opt, optName, obj, btn, array := [], ddList := ""
-
-	gui 1:-DPIScale ; hacky workaround to at least get the options crammed in view - for those folks who use higher DPI settings
-
+	
+	gui 1:-DPIScale 		; hacky workaround to at least get the options crammed in view - for those folks who use higher DPI settings
+	
 	gui 1:add, button, 		hidden default h0 w0 y0 y0 geditOutputFolder,		; For output edit field (default button
 	
 	gui 1:add, statusBar
