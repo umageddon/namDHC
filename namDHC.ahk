@@ -1459,7 +1459,9 @@ createMainGUI()
 {
 	global
 	local idx, key, opt, optName, obj, btn, array := [], ddList := ""
-	
+
+	gui 1:-DPIScale ; hacky workaround to at least get the options crammed in view - for those folks who use higher DPI settings
+
 	gui 1:add, button, 		hidden default h0 w0 y0 y0 geditOutputFolder,		; For output edit field (default button
 	
 	gui 1:add, statusBar
