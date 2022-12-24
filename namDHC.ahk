@@ -107,13 +107,15 @@ v1.11
 
 v1.12
 - Workaround to at least get the options crammed in view - for those folks who use higher DPI settings
- Thanks TFWol 
+ Thanks TFWol
+
+v1.13
 )
 
 
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.12"
+CURRENT_VERSION := "1.13"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
