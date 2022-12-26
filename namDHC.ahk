@@ -683,6 +683,10 @@ addFolderFiles()
 						newFiles.push(a_LoopFileLongPath)
 				}
 			}
+			
+		case "listViewInputFiles":
+			loop, parse, A_GuiEvent, % "`n"
+				newFiles.push(a_Loopfield)
 	}
 	
 	if ( newFiles.length() ) {
@@ -1978,6 +1982,14 @@ removeFromArray(removeItem, byRef thisArray)
 	}
 	return thisArray
 }
+
+
+; Handle input file drag and drop
+;--------------------------------
+GuiDropFiles:
+	addFolderFiles()
+	return
+
 
 ; Get Windows current default font
 ; by SKAN
