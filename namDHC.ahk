@@ -113,12 +113,13 @@ v1.13
 - Final report shows size savings when compressing to CHD
 - Fixed output folder being cleared if cancel was clicked in the select folder helper
 - Removed close button on console windows
+- Some cleanup
 )
 
 
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.12"
+CURRENT_VERSION := "1.13"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
