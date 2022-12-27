@@ -1,5 +1,6 @@
 onMessage(0x4a, "thread_receiveData")
 
+gui 1: -SysMenu
 gui 1:show, hide, % APP_RUN_JOB_NAME
 menu tray, noIcon
 
@@ -14,7 +15,7 @@ thread_log("Started ... ")
 console := new Console()
 console.setConsoleTitle(APP_RUN_CONSOLE_NAME)
 
-;winSet, Style, ^0x80000 , % "ahk_id " console.getConsoleHWND() ; Remove close button on window
+winSet, Style, ^0x80000 , % "ahk_id " console.getConsoleHWND() ; Remove close button on window
 
 if ( SHOW_JOB_CONSOLE == "no" ) 												; Hide console
 	winHide , % "ahk_id " console.getConsoleHWND()
@@ -132,7 +133,22 @@ thread_log("`nCommand line: " cmdLine "`n`n")
 thread_sendData.progress := 0
 thread_sendData.log := "Starting " stringUpper(thread_recvData.cmd) " - " thread_recvData.workingTitle
 thread_sendData.progressText := "Starting job  -  " thread_recvData.workingTitle
+
 thread_sendData()
+
+
+; Get starting file size
+if ( instr(stringLower(fromFile), "gdi") || instr(stringLower(fromFile), "cue") || instr(stringLower(fromFile), "toc") ) {
+	thread_sendData.fileStartSize := 0
+	for idx, file in getFilesFromCUEGDITOC(strReplace(fromFile, """", "")) { 	; Remove quotes form filename
+		fileGetSize fs, % file  												; if in TOC, GDI or CUE, get starting files sizes in bytes
+		fileStartSize += fs
+	}
+} else {
+	fileGetSize fs, % strReplace(fromFile, """", "")  							; Get starting file size in bytes if not a TOC, CUE or GDI
+	fileStartSize := fs
+}
+
 
 setTimer, thread_timeout, % (TIMEOUT_SEC*1000) 						; Set timeout timer
 output := runCMD(cmdLine, thread_recvData.workingDir, "CP0", "thread_parseCHDMANOutput") ; thread_parseCHDMANOutput is the function that will be called for STDOUT 
@@ -140,7 +156,7 @@ setTimer, thread_timeout, off
 
 rtnError := thread_checkForErrors(output.msg)
 
-; CHDMAN was not successfull - Errors were detected
+; CHDMAN was not successful - Errors were detected
 ; -------------------------------------------------------------------------------------------------------------------
 if ( rtnError ) {
 	
@@ -170,7 +186,6 @@ if ( rtnError ) {
 
 ; CHDMAN was successfull - No errors were detected
 ; -------------------------------------------------------------------------------------------------------------------
-
 if ( fileExist(tempZipDirectory) ) 
 	thread_deleteDir(tempZipDirectory, 1) 														; Always delete temp zip directory and all of its contents
 
@@ -200,14 +215,26 @@ else if ( inStr(thread_recvData.cmd, "copy") )
 	suffx := "copied metadata" 
 else if ( inStr(thread_recvData.cmd, "dumpmeta") )
 	suffx := "dumped metadata"
-	
+
 thread_sendData.status := "success"
 thread_sendData.log := "Successfully " suffx "  -  " thread_recvData.workingTitle
-thread_sendData.report := "`nSuccessfully " suffx "`n"
 thread_sendData.progressText := "Successfully " suffx "  -  " thread_recvData.workingTitle
 thread_sendData.progress := 100
-thread_sendData()
 
+; Calculate file size savings
+fileGetSize, fileFinishSize, % strReplace(toFile, """", "") 	; Get new file size - remove quotes from filename
+
+if ( instr(thread_recvData.cmd, "create") > 0 ) { ; If job is compressing a new CHD, add report of file size savings
+	pcnt := (1 - (fileFinishSize / fileStartSize))*100
+	bytesSaved := fileStartSize - fileFinishSize
+	thread_sendData.report := "`nStarting size: " formatBytes(fileStartSize) " - Finished file size: " formatBytes(fileFinishSize) "`nTotal size saved: " formatBytes(bytesSaved) "  -  Space savings: " pcnt "%"
+	thread_sendData.fileStartSize  := fileStartSize
+	thread_sendData.fileFinishSize := fileFinishSize
+}
+
+thread_sendData.report .= "`n`nSuccessfully " suffx "`n"
+
+thread_sendData()
 thread_finishJob()
 exitApp
 
@@ -375,28 +402,15 @@ thread_receiveData(wParam, lParam)
 		
 		thread_log("`nThread cancel signal receieved`n")
 
-		winClose, % "ahk_pid " . thread_recvData.chdmanPID
-		
+		process, close, % thread_recvData.chdmanPID
+		sleep 1000
 		process, Exist, % thread_recvData.chdmanPID
-		if ( errorLevel <> 0 ) { ; Process exists
-			sleep 50
-			winWaitClose, % "ahk_pid " . thread_recvData.chdmanPID, , 1
-
-			process, Exist, % thread_recvData.chdmanPID
-			if ( errorLevel <> 0 ) { ; Process exists
-				sleep 50
-				process, close, % thread_recvData.chdmanPID
-				sleep 50
-				process, Exist, % thread_recvData.chdmanPID
-				sleep 50
-			}
-		}
-
-		if ( errorlevel <> 0 ) { ; Process exists
+		
+		if ( errorlevel <> 0 ) { ; Process still exists
 			thread_sendData.log := "Couldn't cancel " thread_recvData.workingTitle " - Error closing job"
 			thread_sendData.progressText := "Couldn't cancel -  " thread_recvData.workingTitle
 			thread_sendData.progress := 100
-			thread_sendData.report := "`nJob couldn't be cancelled!`n"
+			thread_sendData.report := "`nCancelling of job was unsuccessful`n"
 			thread_sendData()
 			
 			thread_log("`n`nJob couldn't be cancelled!`n")

@@ -106,16 +106,19 @@ v1.11
 - Slight speed improvement and (hopefully) improved reliability when cancelling jobs
 
 v1.12
-- Workaround to at least get the options crammed in view - for those folks who use higher DPI settings
- Thanks TFWol
+- Added an option to force no DPI scaling for people who are having issues with options being cut off in window (Thanks TFWol)
+- Fixed quit routine
 
 v1.13
+- Final report shows size savings when compressing to CHD
+- Fixed output folder being cleared if cancel was clicked in the select folder helper
+- Removed close button on console windows
 )
 
 
 ; Default global values 
 ; ---------------------
-CURRENT_VERSION := "1.13"
+CURRENT_VERSION := "1.12"
 CHECK_FOR_UPDATES_STARTUP := "yes"
 CHDMAN_FILE_LOC := a_scriptDir "\chdman.exe"
 DIR_TEMP := a_Temp "\namDHC"
@@ -126,6 +129,7 @@ APP_VERBOSE_NAME := APP_MAIN_NAME " - Verbose"
 APP_RUN_JOB_NAME := APP_MAIN_NAME " - Job"
 APP_RUN_CHDMAN_NAME := APP_RUN_JOB_NAME " - chdman"
 APP_RUN_CONSOLE_NAME := APP_RUN_JOB_NAME " - Console"
+APP_NO_DPI_SCALE := "no"
 TIMEOUT_SEC := 20
 WAIT_TIME_CONSOLE_SEC := 1
 JOB_QUEUE_SIZE := 3
@@ -143,10 +147,11 @@ APP_MAIN_WIN_POS_X := 800
 APP_MAIN_WIN_POS_Y := 100
 
 
+
 ; Read ini to write over globals if changed previously
 ;-------------------------------------------------------------
 ini("read" 
-	,["JOB_QUEUE_SIZE","OUTPUT_FOLDER","SHOW_JOB_CONSOLE","SHOW_VERBOSE_WINDOW","PLAY_SONG_FINISHED","REMOVE_FILE_ENTRY_AFTER_FINISH"
+	,["JOB_QUEUE_SIZE","OUTPUT_FOLDER","SHOW_JOB_CONSOLE","SHOW_VERBOSE_WINDOW","PLAY_SONG_FINISHED","REMOVE_FILE_ENTRY_AFTER_FINISH", "APP_NO_DPI_SCALE"
 	,"APP_MAIN_WIN_POS_X","APP_MAIN_WIN_POS_Y","APP_VERBOSE_WIN_WIDTH","APP_VERBOSE_WIN_HEIGHT","APP_VERBOSE_WIN_POS_X","APP_VERBOSE_WIN_POS_Y","CHECK_FOR_UPDATES_STARTUP"])
 
 if ( !fileExist(CHDMAN_FILE_LOC) ) {
@@ -197,10 +202,11 @@ GUI.menu.File[1] :=		{name:"Quit",											gotolabel:"quitApp",					saveVar:""
 GUI.menu.About[1] :=	{name:"About",											gotolabel:"menuSelected",				saveVar:""}
 GUI.menu.Settings[1] :=	{name:"Check for updates automatically",				gotolabel:"menuSelected",				saveVar:"CHECK_FOR_UPDATES_STARTUP"}
 GUI.menu.Settings[2] :=	{name:"Number of jobs to run concurrently",				gotolabel:":SubSettingsConcurrently",	saveVar:""}
-GUI.menu.Settings[3] :=	{name:"Show a verbose window",							gotolabel:"menuSelected",				saveVar:"SHOW_VERBOSE_WINDOW", Fn:"showVerbose"}
+GUI.menu.Settings[3] :=	{name:"Show a verbose window",							gotolabel:"menuSelected",				saveVar:"SHOW_VERBOSE_WINDOW", 	Fn:"showVerbose"}
 GUI.menu.Settings[4] :=	{name:"Show a console window for each new job",			gotolabel:"menuSelected",				saveVar:"SHOW_JOB_CONSOLE"}
 GUI.menu.Settings[5] :=	{name:"Play a sound when finished jobs",				gotolabel:"menuSelected",				saveVar:"PLAY_SONG_FINISHED"}
 GUI.menu.Settings[6] :=	{name:"Remove file entry from list on success",			gotolabel:"menuSelected",				saveVar:"REMOVE_FILE_ENTRY_AFTER_FINISH"}
+GUI.menu.Settings[7] :=	{name:"No DPI scaling - May help with cut off options",	gotolabel:"menuSelected",				saveVar:"APP_NO_DPI_SCALE", 	Fn: "msgNeedARestart"}
 
 ; misc GUI variables
 ;-------------------------------------------------------------
@@ -260,7 +266,7 @@ GUI.chdmanOpt.size :=				{name: "size",				paramString: "s",	description: "Size 
 GUI.chdmanOpt.unitSize :=			{name: "unitsize",			paramString: "us",	description: "Size of each unit (in bytes)", 				editField: 0}
 GUI.chdmanOpt.sectorSize :=			{name: "sectorsize",		paramString: "ss",	description: "Size of each hard disk sector (in bytes)", 	editField: 512}
 GUI.chdmanOpt.deleteInputFiles :=	{name: "deleteInputFiles",						description: "Delete input files after completing job", 	masterOf: "deleteInputDir"}
-GUI.chdmanOpt.deleteInputDir :=		{name: "deleteInputDir",						description: "Also delete input directory (if empty)", 				xInset:10}
+GUI.chdmanOpt.deleteInputDir :=		{name: "deleteInputDir",						description: "Also delete input directory (if empty)", 		xInset:10}
 GUI.chdmanOpt.createSubDir :=		{name: "createSubDir",							description: "Create a directory for each job"}
 GUI.chdmanOpt.keepIncomplete :=		{name: "keepIncomplete",						description: "Keep failed or cancelled output files"}
 
@@ -291,7 +297,6 @@ return
 
 
 
-
 ; A Menu item was selected
 ;-------------------------------------------------------------
 menuSelected() 
@@ -311,15 +316,15 @@ menuSelected()
 				%fn%(%varName%)																	; Call function
 			}
 
-		case "SubSettingsConcurrently":											; Menu: Settings: User selected number of jobs to run concurrently
-			loop % JOB_QUEUE_SIZE_LIMIT											; Uncheck all 
+		case "SubSettingsConcurrently":															; Menu: Settings: User selected number of jobs to run concurrently
+			loop % JOB_QUEUE_SIZE_LIMIT															; Uncheck all 
 				menu, SubSettingsConcurrently, UnCheck, % a_index
-			menu, SubSettingsConcurrently, Check, % A_ThisMenuItemPos			; Check selected
-			JOB_QUEUE_SIZE := A_ThisMenuItemPos									; Set variable
+			menu, SubSettingsConcurrently, Check, % A_ThisMenuItemPos							; Check selected
+			JOB_QUEUE_SIZE := A_ThisMenuItemPos													; Set variable
 			ini("write", "JOB_QUEUE_SIZE")
 			log("Saved JOB_QUEUE_SIZE")
 		
-		case "AboutMenu":														; Menu: About
+		case "AboutMenu":																		; Menu: About
 			guiToggle("disable", "all")
 			gui 1:+OwnDialogs
 			
@@ -344,6 +349,7 @@ menuSelected()
 			controlFocus,, About 												; Removes outline around html anchor
 			return
 	}
+
 }
 
 4GuiClose() 
@@ -351,6 +357,10 @@ menuSelected()
 	gui 4:destroy
 	refreshGUI()
 	return
+}
+
+msgNeedARestart() {
+	msgbox, 16, % "", % "You will need to restart to see any changes"
 }
 
 
@@ -722,7 +732,7 @@ addFolderFiles()
 }
 
 
-; Listview containting input files was clicked
+; The listview containting the current input files was clicked
 ;-------------------------------------------------------------
 listViewInputFiles()
 {
@@ -742,12 +752,11 @@ listViewInputFiles()
 		guiToggle("disable", ["buttonclearInputFiles", "buttonRemoveInputFiles"]) 
 		
 	guiToggle((LV_GetCount()>0?"enable":"disable"), ["buttonselectAllInputFiles"]) 	
-
 }
 
 
-; Select from input listview files
-; --------------------------------
+; Select file(s) from current input listview 
+; ------------------------------------------
 selectInputFiles()
 {
 	global job
@@ -785,6 +794,9 @@ selectInputFiles()
 	controlFocus, SysListView321, %APP_MAIN_NAME%
 }
 
+
+; Report Queued files to the bottom info bar
+; ------------------------------------------
 reportQueuedFiles() 
 {
 	global job
@@ -801,6 +813,7 @@ editOutputFolder()
 	return
 }
 
+
 ; Check new inputted folder
 ; -------------------------
 checkNewOutputFolder()
@@ -811,27 +824,31 @@ checkNewOutputFolder()
 
 	if ( a_guiControl == "buttonBrowseOutput" ) {
 		selectFolder := selectFolderEx(OUTPUT_FOLDER, "Select a folder to save converted files to", mainAppHWND)
-		guiCtrl({editOutputFolder:selectFolder.selectedDir}) ; Assign to edit field if user selected
+		if ( selectFolder.selectedDir )
+			guiCtrl({editOutputFolder:selectFolder.selectedDir}) ; Assign to edit field if user selected
 	}
 
 	newFolder := editOutputFolder
 	
-	if ( !newFolder || newFolder == OUTPUT_FOLDER ) 
+	if ( !newFolder || newFolder == OUTPUT_FOLDER ) {
+		newFolder := OUTPUT_FOLDER 								; Return to old value if no change or no value given
 		return
+	}
 
-	badChar := false
-	for idx, val in ["*", "?", "<", ">", "/", "|", """"] {
+	badChar := false 											
+	for idx, val in ["*", "?", "<", ">", "/", "|", """"] {		; Validate folder name
 		if ( inStr(newfolder, val) ) {
 			badChar := true
 			break
 		}
 	}
+	
 	folderChk := splitPath(newFolder)
 	if ( !folderChk.drv || !folderChk.dir || badChar || strlen(newFolder) > 255 ) 	{		; Make sure newFolder is a valid directory string
 		msgBox % "Invalid output folder"
 		guiCtrl({editOutputFolder:OUTPUT_FOLDER})				; Edit reverts back to old value if new value invalid
 	} else {
-		OUTPUT_FOLDER := normalizePath(regExReplace(newFolder, "\\$"))
+		OUTPUT_FOLDER := normalizePath(regExReplace(newFolder, "\\$"))	; 'Sanitize' new folder name
 
 		log("'" OUTPUT_FOLDER "' selected as output folder")
 		SB_SetText("'" OUTPUT_FOLDER "' selected as new output folder" , 1)
@@ -871,16 +888,19 @@ buttonStartJobs()
 	gui 1:+ownDialogs
 	
 	switch job.Cmd { 
+		; Create media
 		case "createcd", "createhd", "createraw", "createld", "extractcd", "extracthd", "extractraw", "extractld":
 			SB_SetText("Creating " stringUpper(job.Cmd) " work queue" , 1)
 			log("Creating " stringUpper(job.Cmd) " work queue" )
 			job.workQueue := createjob(job.Cmd, job.Options, job.selectedOutputExtTypes, job.selectedInputExtTypes, job.scannedFiles[job.Cmd])	; Create a queue (object) of files to process
 			
+		; Verify CHD
 		case "verify":
 			SB_SetText("Verifying CHD's" , 1)
 			log("Starting Verify CHD's" )
 			job.workQueue := createjob("verify", "", "", job.selectedInputExtTypes, job.scannedFiles["verify"])
 		
+		; Show info for CHD
 		case "info":
 			SB_SetText("Info for CHD's" , 1)
 			log("Getting info from CHD's" )
@@ -978,7 +998,6 @@ buttonStartJobs()
 		return
 	}
 
-	
 	job.workTally := {}
 	job.availPSlots := []
 	job.msgData := []
@@ -986,9 +1005,8 @@ buttonStartJobs()
 	job.allReport := ""
 	job.halted := false
 	job.started := false
-	job.workTally := {started:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:""}		; Set job variables
+	job.workTally := {started:0, total:job.workQueue.length(), success:0, cancelled:0, skipped:0, withError:0, finished:0, haltedMsg:"", totalFileStartSize:0, totalFileFinishSize:0}		; Set job variables
 	job.workQueueSize := (job.workTally.total < JOB_QUEUE_SIZE)? job.workTally.total : JOB_QUEUE_SIZE											; If number of jobs is less then queue count, only display those progress bars
-
 	toggleMainMenu("hide")																									; Hide main menu bar (selecting menu when running jobs stops messages from being receieved from threads)
 	guiToggle("disable", "all")																								; Disable all controls while job is in progress
 	guiToggle("hide", "buttonStartJobs")
@@ -1017,15 +1035,16 @@ buttonStartJobs()
 
 	job.started := true
 	job.startTime := a_TickCount
-	onMessage(0x004A, "receiveData")											; Receive messages from threads
+	onMessage(0x004A, "receiveData")																	; Receive messages from threads
 	
-	; Job loop
-	while ( job.workTally.finished < job.workTally.total ) { 					; Loop while # of finished jobs are less then job.workTally.total
+	; Main job loop
+	; -----------------------------------------------------
+	while ( job.workTally.finished < job.workTally.total ) { 											; Loop while # of finished jobs are less then job.workTally.total
 
 		if ( job.started == false )
 			break
 		
-		if ( job.availPSlots.length() > 0 && job.workQueue.count() > 0 ) { 		; If there is another queued job and there is a slot available 
+		if ( job.availPSlots.length() > 0 && job.workQueue.count() > 0 ) { 								; If there is another queued job and there is a slot available 
 			
 			thisJob := job.workQueue.removeAt(1)														; Grab the first job from the work queue and assign parameters to variable
 			thisJob.pSlot := job.availPSlots.removeAt(1)												; Assign the progress bar a y position from available queue
@@ -1036,7 +1055,7 @@ buttonStartJobs()
 			run % runCmd ,,, pid																		; Run it
 			thisJob.pid := pid
 
-			while ( thisJob.pid <> job.msgData[thisJob.pSlot].pid ) {	; Wait for confirmation that msg was receieved																			
+			while ( thisJob.pid <> job.msgData[thisJob.pSlot].pid ) {									; Wait for confirmation that msg was receieved																			
 				msg := JSON.Dump(thisJob)
 				sendAppMessage(msg, "ahk_class AutoHotkey ahk_pid " pid)
 				sleep 250	
@@ -1045,24 +1064,24 @@ buttonStartJobs()
 			job.msgData[thisJob.pSlot].timeout := a_TickCount
 		}
 		
-		loop % job.workQueueSize {			 									; Check for timeouts 
+		loop % job.workQueueSize {			 															; Check for timeouts 
 			
 			if ( job.msgData[a_index].status == "finished" || job.msgData[a_index].status == "cancelled" )
 				continue
 			
 			if ( (a_TickCount - job.msgData[a_index].timeout) > (TIMEOUT_SEC*1000) ) {					; If timer counter exceeds threshold, we will assume thread is locked up or has errored out 
 				
-				job.msgData[a_index].status := "error"							; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
+				job.msgData[a_index].status := "error"													; Update job.msgData[] with messages and send "error" flag for that job, then parse the data
 				job.msgData[a_index].log := "Error: Job timed out"
 				job.msgData[a_index].report := "`nError: Job timed out`n`n`n"
 				job.msgData[a_index].progress := 100
 				job.msgData[a_index].progressText := "Timed out  -  " job.msgData[a_index].workingTitle
 				parseData(job.msgData[a_index])
 				
-				cancelJob(job.msgData[a_index].pSlot) 							; And attempt to close the process associated with it
+				cancelJob(job.msgData[a_index].pSlot) 													; And attempt to close the process associated with it
 			}
 		}
-		
+
 		sleep 1000
 	} ; end job loop
 
@@ -1086,7 +1105,7 @@ buttonStartJobs()
 		fnMsg .= job.workTally.cancelled ? "Jobs cancelled by the user: " job.workTally.cancelled "`n" : ""
 		fnMsg .= job.workTally.skipped ? "Jobs skipped because the output file already exists: " job.workTally.skipped "`n" : ""
 		fnMsg .= job.workTally.withError ? "Jobs that finished with errors: " job.workTally.withError "`n" : ""
-		fnMsg .= "Total time to finish: " millisecToTime(job.endTime-job.startTime)
+		fnMsg .= "Total time to finish: " millisecToTime(job.endTime - job.startTime)
 		SB_SetText("Jobs finished" (job.workTally.withError ? " with some errors":"!"), 1)
 		log( regExReplace(strReplace(fnMsg, "`n", ", "), ", $", "") )
 	
@@ -1100,8 +1119,13 @@ buttonStartJobs()
 			gui 5: margin, 10, 20
 			gui 5: font, s11 Q5 w700 c000000
 			gui 5: add, text,, % job.Desc " report"
+			gui 5: font, s10 Q5 w700 c000000
+			gui 5: add, text,, % fnMsg
+			if ( instr(job.Desc, "create") > 0 ) { ; Show space savings if creating CHD
+				gui 5: add, text, y+10, % (job.workTally.totalFileStartSize > 0 && job.workTally.totalFileFinishSize > 0 ? "Total size before compression: " formatBytes(job.workTally.totalFileStartSize) "`nTotal size after compression: " formatBytes(job.workTally.totalFileFinishSize) "`nSpace savings: " formatBytes(job.workTally.totalFileStartSize-job.workTally.totalFileFinishSize) " (" round((1 - (job.workTally.totalFileFinishSize / job.workTally.totalFileStartSize))*100) "%)" : "")
+			}
 			gui 5: font, s9 Q5 w400 c000000
-			gui 5: add, edit, readonly y+15 w600 h500, % fnMsg "`n" job.allReport
+			gui 5: add, edit, readonly y+15 w800 h500, % job.allReport
 			gui 5: show, autosize center, REPORT
 			Gui 5: +LastFound +AlwaysOnTop +ToolWindow
 			controlFocus,, REPORT
@@ -1113,8 +1137,6 @@ buttonStartJobs()
 		}
 	}
 }
-
-
 
 
 ; User closed the finish window
@@ -1199,20 +1221,23 @@ cancelJob(pSlot)
 }
 
 
-
+; Create CHD info dropdown list
+; -----------------------------
 getDDCHDInfoList()
 {
 	global job
 	for idx, filefull in job.scannedFiles["info"]
-		ddCHDInfoList .= splitPath(filefull).file "|" ; Create CHD info dropdown list
+		ddCHDInfoList .= splitPath(filefull).file "|" 
 	return regExReplace(ddCHDInfoList, "\|$")
 }
 
 
-showCHDInfoLoading() 
+; Show CHD loading message
+; --------------------
+showCHDInfoLoading()
 {
 	guiToggle("disable", "all", 3) 
-	guiToggle("show", "textCHDInfoLoading", 3) 								; Show loading message
+	guiToggle("show", "textCHDInfoLoading", 3) 								
 }
 
 
@@ -1248,8 +1273,8 @@ showCHDInfo(fullFileName, currNum, totalNum, guiNum:=3)
 			infoLineNum++																						; Increase line number counter
 			a := strSplit(line, ": ")																			; Split text into parts
 			guiToggle("enable", ["textCHDInfo_" infoLineNum, "editCHDInfo_" infoLineNum], guiNum)
-			guiCtrl({("textCHDInfo_" infoLineNum):trim(a[1], " ") ": "}, guiNum)					; Add part 1 as subtitle (ie - "File name", "Size", "SHA1", etc)
-			guiCtrl({("editCHDInfo_" infoLineNum):trim(a[2], " ")}, guiNum)								; Part 2 is the information itself 
+			guiCtrl({("textCHDInfo_" infoLineNum):trim(a[1], " ") ": "}, guiNum)								; Add part 1 as subtitle (ie - "File name", "Size", "SHA1", etc)
+			guiCtrl({("editCHDInfo_" infoLineNum):trim(a[2], " ")}, guiNum)										; Part 2 is the information itself 
 		}
 		else if ( line == "----------  -------  ------------------------------------" )							; When we find this string, we know we are in the overview Compression section
 			compressLineNum := 1																				; ... So flag it, use flag as the line counter and move to next loop
@@ -1289,13 +1314,13 @@ parseData(recvData)
 	global job, REMOVE_FILE_ENTRY_AFTER_FINISH
 	
 	job.msgData[recvData.pSlot] := recvData				; Assign globally so we can use anywhere in script - mainly to kill job and check on timeout activity
-	job.msgData[recvData.pSlot].timeout := a_Tickcount	; Set to current time -- We know this job is active
-	
+	job.msgData[recvData.pSlot].timeout := a_Tickcount	; Resetting the timeout timer 
+
 	if ( recvData.log )
 		log("Job " recvData.idx " - " recvData.log)
 	
-	if ( recvData.report ) {
-		if ( !job.parseReport[recvData.idx] )
+	if ( recvData.report ) { 					; Report data was in with receieved data
+		if ( !job.parseReport[recvData.idx] ) 	; If we dont have report data assigned yet for this job number, assign it now
 			job.parseReport[recvData.idx] := "`n`n" stringUpper(recvData.cmd) " - " recvData.workingTitle "`n" drawLine(77) "`n"
 		job.parseReport[recvData.idx] .= recvData.report
 	}
@@ -1334,9 +1359,12 @@ parseData(recvData)
 		
 		case "cancelled":
 			job.workTally.cancelled++
-			SB_SetText("Job " job.msgData[pSlot].idx " cancelled", 1)
+			SB_SetText("Job " recvData.idx " cancelled", 1)
 		
 		case "finished":
+			job.workTally.totalFileStartSize += recvData.fileStartSize
+			job.workTally.totalFileFinishSize += recvData.fileFinishSize
+			
 			job.allReport .= job.parseReport[recvData.idx]
 			job.workTally.finished++
 			percentAll := ceil((job.workTally.finished/job.workTally.total)*100)
@@ -1466,7 +1494,8 @@ createMainGUI()
 	global
 	local idx, key, opt, optName, obj, btn, array := [], ddList := ""
 	
-	gui 1:-DPIScale 		; hacky workaround to at least get the options crammed in view - for those folks who use higher DPI settings
+	if ( APP_NO_DPI_SCALE == "yes" )
+		gui 1:-DPIScale 		; hacky workaround to at least get the options crammed in view - for those folks who use higher DPI settings
 	
 	gui 1:add, button, 		hidden default h0 w0 y0 y0 geditOutputFolder,		; For output edit field (default button
 	
@@ -1689,7 +1718,8 @@ ini(job="read", var:="")
 }
 
 
-
+; Play a sound
+; ------------
 playSound() 
 {
 	if ( inStr(A_OSVersion, "10") || inStr(A_OSVersion, "11") )
@@ -1870,10 +1900,12 @@ showObj(obj, s := "", show:=true)
 }
 
 
+; Create processor count dropdown list
+; -------------------
 procCountDDList()
 {
 	loop % envGet("NUMBER_OF_PROCESSORS")
-		lst .= a_index "|"					; Create processor count dropdown list
+		lst .= a_index "|"					
 	return "|" lst "|"						; Last "|" is to select last as default
 }
 
@@ -1913,21 +1945,12 @@ stringLower(str)
 }
 
 
-;Convert string to uppercase
+; Convert string to uppercase
 ; ---------------------------
 stringUpper(str, title:=false) 
 {
 	stringUpper, rtn, str, % title ? "T":""
 	return rtn
-}
-
-
-; Join an array wilth delimiters and return a string
-strJoin(arr, delim) { 
-    result := ""
-    for each, val in arr
-        result .= val . delim
-    return rTrim(result, delim)
 }
 
 
@@ -1944,9 +1967,9 @@ inArray(cVal, arry)
 
 ; Create a string of items seperated by a delimeter from an array
 ; ---------------------------------------------------------------
-arrayToString(thisArray, delim:=", ")
+arrayToString(arr, delim:=", ")
 {
-	for idx, val in thisArray
+	for idx, val in arr
 		rtn .= val delim
 	return regExReplace(rtn, delim, "", "", 1, -1)
 }
@@ -2205,7 +2228,7 @@ folderDelete(dir, attempts:=5, sleepdelay:=50, full:=0)
 	return false
 }
 
-
+; Delete a list of files that have been successfuly deleted
 deleteFilesReturnList(file) 
 {
 	delFiles := ""
@@ -2309,6 +2332,14 @@ millisecToTime(msec)
 }
 
 
+; Convert bytes to human readable format
+; By SKAN on CT5H/D351 @ tiny.cc/formatbytes
+formatBytes(N) { 
+	Return DllCall("Shlwapi\StrFormatByteSize64A", "Int64",N, "Str",Format("{:16}",N), "Int",16, "AStr") 
+}
+
+
+; URL download to a file var
 ; Thanks maestrith 
 ; https://www.autohotkey.com/board/topic/88685-download-a-url-to-a-variable/
 URLDownloadToVar(url){
@@ -2320,7 +2351,8 @@ URLDownloadToVar(url){
 	}
 }
 
-
+; Normalize path for Windows
+;-----------------------------
 normalizePath(path) {
     cc := DllCall("GetFullPathName", "str", path, "uint", 0, "ptr", 0, "ptr", 0, "uint")
     VarSetCapacity(buf, cc*2)
@@ -2444,6 +2476,7 @@ killAllProcess()
 		process, close, % "chdman.exe"
 		if ( errorLevel == 0 )
 			break
+		sleep 100
 	}
 
 	for idx, app in [APP_MAIN_NAME, APP_VERBOSE_NAME, APP_RUN_JOB_NAME, APP_RUN_CONSOLE_NAME] {
@@ -2478,4 +2511,16 @@ GuiClose()
 
 quitApp() 
 {
+	
+	if ( job.started == true ) {
+		msgBox, 36, % APP_MAIN_NAME, % "Are you sure? Currently running jobs will be killed."
+		ifMsgBox Yes
+		{
+			killAllProcess()
+			exitApp
+		}
+		else 
+			return false
+	}
+	else exitApp
 }
