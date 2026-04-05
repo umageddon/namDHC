@@ -1,8 +1,7 @@
 # namDHC
 Windows frontend for CHDMAN written in AutoHotkey
 
-The program needs CHDMAN.exe in the same directory as namDHC.exe to run - Currently only versions "0.236", "0.237", "0.238", "0.239", "0.240", "0.249" are supported
-
+The program needs CHDMAN.exe in the same directory as namDHC.exe to run.
 ![screenshot3](https://user-images.githubusercontent.com/4080439/159406926-ed97a23e-f1a6-49ff-8ddc-6fcc3fda4490.png)
 ![screenshot4](https://user-images.githubusercontent.com/4080439/159406927-99a2207a-d32d-4034-9d1d-d819fb5da533.png)
 ![screenshot1](https://user-images.githubusercontent.com/4080439/159406928-450a448f-eb06-4d6b-a3ce-a393d4e28b80.png)
