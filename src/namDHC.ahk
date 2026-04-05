@@ -516,7 +516,7 @@ menuSelected()
 			gui4.Add('link', 'x10 y350', 'Github: <a href="https://github.com/umageddon/namDHC">https://github.com/umageddon/namDHC</a>')
 			gui4.Add('link', 'x10 y370', 'MAME Info: <a href="https://www.mamedev.org/">https://www.mamedev.org/</a>')
 			gui4.SetFont('s9 Q5 w400 c000000')
-			gui4.Add('text', 'x10 y400', "(C) Copyright 2024 Umageddon")
+			gui4.Add('text', 'x10 y400', "(C) Copyright 2026 Umageddon")
 			gui4.Show('w800 center')
 			;controlFocus About 												; Removes outline around html anchor
 			return
